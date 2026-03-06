@@ -19,3 +19,9 @@ def test_info_command(normal_image_path: Path):
     result = runner.invoke(app, ["info", str(normal_image_path)])
     assert result.exit_code == 0
     assert "200" in result.output
+
+
+def test_analyze_command_shows_scores(normal_image_path: Path):
+    result = runner.invoke(app, ["analyze", str(normal_image_path)])
+    assert result.exit_code == 0
+    assert "Technical Quality" in result.output

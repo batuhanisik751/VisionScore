@@ -4,23 +4,26 @@ AI-powered photo evaluation tool that analyzes images and produces meaningful sc
 
 ## Project Status
 
-Early stage -- project structure and tooling are set up. Implementation has not started yet.
+Phase 2 complete -- technical quality analysis is functional.
+
+## What's Implemented
+
+- **Technical Quality Analysis** - Sharpness (Laplacian + Sobel), exposure (LAB histogram), noise (Immerkaer), dynamic range (percentile)
+- **CLI Tool** - `visionscore analyze photo.jpg` with colored score bars, `visionscore info` for metadata
+- **Image Pipeline** - Loading, validation, resizing, EXIF metadata extraction
+- **Multiple Output Formats** - Rich terminal output, JSON (`--output json`)
 
 ## Planned Features
 
-- **Technical Quality Analysis** - Sharpness, exposure, noise, dynamic range
-- **Aesthetic Scoring** - Neural image assessment (NIMA) model
-- **Composition Analysis** - Rule of thirds, saliency, horizon detection, visual balance
-- **AI Feedback** - Natural language critique via vision LLMs (GPT-4o / Gemini)
-- **CLI Tool** - `visionscore analyze photo.jpg` with rich terminal output
-- **REST API** - FastAPI service for programmatic access
-- **Multiple Output Formats** - JSON, Markdown, CLI summary
+- Aesthetic scoring (NIMA neural model)
+- Composition analysis (rule of thirds, saliency, horizon, balance)
+- AI feedback via Ollama + LLaVA (local, no API keys)
+- REST API with Supabase (DB + Auth + Storage)
 
 ## Tech Stack
 
-- Python 3.11+, PyTorch, OpenCV, Pillow
-- Typer (CLI), FastAPI (API), Pydantic (data models)
-- NIMA (MobileNetV2), YOLOv8, GPT-4o / Gemini Vision
+- Python 3.11+, OpenCV, Pillow, NumPy
+- Typer (CLI), Pydantic (data models), Rich (terminal output)
 - pytest, ruff, mypy
 
 ## Project Structure
@@ -43,8 +46,14 @@ scripts/               # Model download, benchmarks
 git clone https://github.com/yourusername/VisionScore.git
 cd VisionScore
 
-# Install in dev mode (once pyproject.toml is created)
+# Install in dev mode
 pip install -e ".[dev]"
+
+# Analyze a photo
+visionscore analyze photo.jpg
+
+# View image metadata
+visionscore info photo.jpg
 ```
 
 ## Claude Code Integration
