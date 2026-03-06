@@ -19,6 +19,8 @@ dependencies = [
     "exifread>=3.0",
     "ollama>=0.3",
     "supabase>=2.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
 ]
 
 [project.optional-dependencies]

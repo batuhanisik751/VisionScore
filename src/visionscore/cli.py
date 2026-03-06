@@ -80,8 +80,27 @@ def analyze(
     tech_analyzer = TechnicalAnalyzer(thresholds=settings.thresholds)
     tech = tech_analyzer.analyze(image, metadata=meta)
 
+    # Aesthetic analysis (graceful degradation if weights missing)
+    aesthetic = None
+    try:
+        from visionscore.analyzers.aesthetic import AestheticAnalyzer
+
+        model_path = settings.model_dir / "nima_mobilenetv2.pth"
+        aes_analyzer = AestheticAnalyzer(model_path=model_path, device=settings.device)
+        aesthetic = aes_analyzer.analyze(image, metadata=meta)
+    except FileNotFoundError:
+        pass  # warning printed after tables
+    except Exception as e:
+        if verbose:
+            console.print(f"[dim]Aesthetic scoring error: {e}[/dim]")
+
     if output == "json":
-        console.print(tech.model_dump_json(indent=2))
+        import json
+
+        data = {"technical": tech.model_dump()}
+        if aesthetic:
+            data["aesthetic"] = aesthetic.model_dump()
+        console.print(json.dumps(data, indent=2))
         return
 
     table = Table(title="Technical Quality")
@@ -107,3 +126,39 @@ def analyze(
         _score_bar(tech.overall),
     )
     console.print(table)
+
+    if aesthetic:
+        aes_table = Table(title="Aesthetic Quality")
+        aes_table.add_column("Metric", style="cyan")
+        aes_table.add_column("Score", style="white", justify="right")
+        aes_table.add_column("Bar", style="white")
+
+        nc = (
+            "green" if aesthetic.nima_score >= 70
+            else "yellow" if aesthetic.nima_score >= 40
+            else "red"
+        )
+        aes_table.add_row(
+            "NIMA Score",
+            f"[{nc}]{aesthetic.nima_score:.1f}[/{nc}]",
+            _score_bar(aesthetic.nima_score),
+        )
+        aes_table.add_row("Confidence", f"{aesthetic.confidence:.2f}", "")
+        aes_table.add_row("Std Dev", f"{aesthetic.std_dev:.2f}", "")
+        aes_table.add_section()
+        ac = (
+            "green" if aesthetic.overall >= 70
+            else "yellow" if aesthetic.overall >= 40
+            else "red"
+        )
+        aes_table.add_row(
+            "[bold]Overall[/bold]",
+            f"[bold {ac}]{aesthetic.overall:.1f}[/bold {ac}]",
+            _score_bar(aesthetic.overall),
+        )
+        console.print(aes_table)
+    else:
+        console.print(
+            "[yellow]Aesthetic scoring skipped: NIMA weights not found. "
+            "Run: python scripts/download_models.py[/yellow]"
+        )

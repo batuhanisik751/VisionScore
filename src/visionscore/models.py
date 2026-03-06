@@ -25,6 +25,7 @@ class TechnicalScore(BaseModel):
 
 class AestheticScore(BaseModel):
     nima_score: float = Field(ge=0, le=100)
+    std_dev: float = Field(ge=0, le=5.0, default=0.0)
     confidence: float = Field(ge=0, le=1)
     overall: float = Field(ge=0, le=100)
 

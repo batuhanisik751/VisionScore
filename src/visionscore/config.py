@@ -35,5 +35,6 @@ class Settings(BaseSettings):
     model_dir: Path = Path.home() / ".visionscore" / "models"
     max_image_size: int = 1024
     output_format: str = "text"
+    device: str = "auto"
     analysis_weights: AnalysisWeights = AnalysisWeights()
     thresholds: Thresholds = Thresholds()
