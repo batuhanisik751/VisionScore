@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visionscore"
+version = "0.1.0"
+description = "AI-powered photo evaluation tool"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "opencv-python-headless>=4.8",
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    "typer[all]>=0.9",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "rich>=13.0",
+    "exifread>=3.0",
+    "ollama>=0.3",
+    "supabase>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.1", "mypy>=1.0"]
+api = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6", "httpx>=0.24"]
+
+[project.scripts]
+visionscore = "visionscore.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

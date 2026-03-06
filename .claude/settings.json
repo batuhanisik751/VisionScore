@@ -2,12 +2,13 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit",
-        "command": "FILE_PATH=$(echo '$TOOL_INPUT' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('file_path',''))\" 2>/dev/null) && TOOL_INPUT_FILE_PATH=\"$FILE_PATH\" bash .claude/scripts/post-change-hook.sh"
-      },
-      {
-        "matcher": "Write",
-        "command": "FILE_PATH=$(echo '$TOOL_INPUT' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('file_path',''))\" 2>/dev/null) && TOOL_INPUT_FILE_PATH=\"$FILE_PATH\" bash .claude/scripts/post-change-hook.sh"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/post-change-hook.sh"
+          }
+        ]
       }
     ]
   }
