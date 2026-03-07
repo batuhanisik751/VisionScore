@@ -21,20 +21,20 @@ export interface AnalysisReport {
     noise: number;
     dynamic_range: number;
     overall: number;
-  };
+  } | null;
   aesthetic: {
     nima_score: number;
     std_dev: number;
     confidence: number;
     overall: number;
-  };
+  } | null;
   composition: {
     rule_of_thirds: number;
     subject_position: number;
     horizon: number;
     balance: number;
     overall: number;
-  };
+  } | null;
   ai_feedback: {
     description: string;
     genre: string;
@@ -43,7 +43,7 @@ export interface AnalysisReport {
     mood: string;
     score: number;
     reasoning: string;
-  };
+  } | null;
   overall_score: number;
   grade: string;
   analysis_time_seconds: number;

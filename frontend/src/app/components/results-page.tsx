@@ -15,8 +15,9 @@ import {
   Clock,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
+import { Loader2, Check } from "lucide-react";
 
 interface ResultsPageProps {
   saved?: boolean;
@@ -27,19 +28,102 @@ export function ResultsPage({ saved }: ResultsPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const state = location.state as { report?: AnalysisReport; warnings?: string[]; imageUrl?: string } | null;
+  const state = location.state as { report?: AnalysisReport; warnings?: string[]; imageUrl?: string; file?: File } | null;
+
+  const [fetchedReport, setFetchedReport] = useState<AnalysisReport | null>(null);
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (saved && id && !state?.report) {
+      setFetchLoading(true);
+      fetch(`/api/v1/reports/${id}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`Failed to load report (${res.status})`);
+          const row = await res.json();
+          setFetchedReport({
+            ...row.full_report,
+            id: row.id,
+            image_url: row.image_url || row.full_report.image_url || "",
+            timestamp: row.created_at,
+          });
+        })
+        .catch((err) => setFetchError(err instanceof Error ? err.message : "Failed to load report"))
+        .finally(() => setFetchLoading(false));
+    }
+  }, [saved, id, state?.report]);
 
   const report: AnalysisReport | undefined = state?.report
     ? { ...state.report, id: "live", image_url: state.imageUrl || "" }
-    : MOCK_REPORTS.find((r) => r.id === id) || MOCK_REPORTS[0];
+    : fetchedReport || MOCK_REPORTS.find((r) => r.id === id) || undefined;
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  if (fetchLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-gray-500 animate-spin mb-4" />
+        <p className="text-sm text-gray-500">Loading report...</p>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {fetchError}
+        </div>
+      </div>
+    );
+  }
 
   if (!report) return null;
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (saved && report.id) {
+      try {
+        await fetch(`/api/v1/reports/${report.id}`, { method: "DELETE" });
+      } catch {
+        // best-effort delete
+      }
+    }
     setShowDeleteConfirm(false);
     navigate("/history");
+  };
+
+  const handleSave = async () => {
+    const originalFile = state?.file;
+    if (!originalFile) {
+      setSaveError("Original file not available for saving");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", originalFile);
+
+      const res = await fetch("/api/v1/analyze/save", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Save failed (${res.status})`);
+      }
+
+      setSaveSuccess(true);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleExport = () => {
@@ -205,9 +289,28 @@ export function ResultsPage({ saved }: ResultsPageProps) {
                 <Trash2 className="w-3.5 h-3.5" /> Delete
               </button>
             ) : (
-              <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08] transition-colors">
-                <Save className="w-3.5 h-3.5" /> Save
-              </button>
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || saveSuccess}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm border transition-colors ${
+                    saveSuccess
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      : "bg-white/[0.05] text-gray-300 border-white/[0.08] hover:bg-white/[0.08]"
+                  }`}
+                >
+                  {saving ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
+                  ) : saveSuccess ? (
+                    <><Check className="w-3.5 h-3.5" /> Saved</>
+                  ) : (
+                    <><Save className="w-3.5 h-3.5" /> Save</>
+                  )}
+                </button>
+                {saveError && (
+                  <p className="text-xs text-red-400 mt-1">{saveError}</p>
+                )}
+              </>
             )}
             <button
               onClick={handleExport}

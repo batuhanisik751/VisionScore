@@ -200,6 +200,13 @@ async def analyze_and_save(
     image_url = await db.upload_image(content, file.filename or "image.jpg")
     report_id = await db.save_report(report, image_url=image_url)
 
+    if report_id is None:
+        raise HTTPException(
+            503,
+            "Analysis succeeded but saving failed. "
+            "Ensure the 'analysis_reports' table exists in Supabase (see sql/schema.sql).",
+        )
+
     return SavedReportResponse(id=report_id, report=report, image_url=image_url, warnings=warnings)
 
 

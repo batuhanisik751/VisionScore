@@ -57,7 +57,7 @@ export function UploadPage() {
 
       const data = await res.json();
       navigate("/results/new", {
-        state: { report: data.report, warnings: data.warnings, imageUrl: preview },
+        state: { report: data.report, warnings: data.warnings, imageUrl: preview, file },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");

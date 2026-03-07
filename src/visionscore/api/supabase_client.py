@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from uuid import uuid4
 
 from visionscore.config import Settings
 from visionscore.models import AnalysisReport
+
+logger = logging.getLogger(__name__)
 
 
 class SupabaseClient:
@@ -14,19 +17,37 @@ class SupabaseClient:
         from supabase import create_client
 
         self._client = create_client(url, key)
+        self._ensure_bucket()
 
-    async def upload_image(self, file_bytes: bytes, filename: str) -> str:
-        """Upload image to Supabase Storage and return the storage path."""
+    def _ensure_bucket(self) -> None:
+        """Check that the 'images' storage bucket exists, attempt to create if not."""
+        try:
+            buckets = self._client.storage.list_buckets()
+            if any(b.name == "images" for b in buckets):
+                return
+            self._client.storage.create_bucket("images", options={"public": True})
+        except Exception as e:
+            logger.warning(
+                "Could not verify/create 'images' bucket: %s. "
+                "Create it manually in the Supabase dashboard.", e
+            )
+
+    async def upload_image(self, file_bytes: bytes, filename: str) -> str | None:
+        """Upload image to Supabase Storage and return the public URL, or None on failure."""
         path = f"uploads/{uuid4().hex}_{filename}"
 
-        def _upload() -> str:
-            self._client.storage.from_("images").upload(path, file_bytes)
-            return self._client.storage.from_("images").get_public_url(path)
+        def _upload() -> str | None:
+            try:
+                self._client.storage.from_("images").upload(path, file_bytes)
+                return self._client.storage.from_("images").get_public_url(path)
+            except Exception as e:
+                logger.warning("Image upload failed: %s", e)
+                return None
 
         return await asyncio.to_thread(_upload)
 
-    async def save_report(self, report: AnalysisReport, image_url: str | None = None) -> str:
-        """Insert analysis report into the database and return the row ID."""
+    async def save_report(self, report: AnalysisReport, image_url: str | None = None) -> str | None:
+        """Insert analysis report into the database and return the row ID, or None on failure."""
         data = report.model_dump(mode="json")
         row = {
             "image_path": report.image_meta.path,
@@ -44,9 +65,13 @@ class SupabaseClient:
             "full_report": data,
         }
 
-        def _insert() -> str:
-            result = self._client.table("analysis_reports").insert(row).execute()
-            return result.data[0]["id"]
+        def _insert() -> str | None:
+            try:
+                result = self._client.table("analysis_reports").insert(row).execute()
+                return result.data[0]["id"]
+            except Exception as e:
+                logger.warning("Failed to save report: %s", e)
+                return None
 
         return await asyncio.to_thread(_insert)
 

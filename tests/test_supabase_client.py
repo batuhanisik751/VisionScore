@@ -63,9 +63,19 @@ class TestUploadImage:
 
         url = await client.upload_image(b"fake-image-bytes", "photo.jpg")
 
+        assert url is not None
         assert "photo.jpg" in url
         storage_bucket.upload.assert_called_once()
         storage_bucket.get_public_url.assert_called_once()
+
+    async def test_returns_none_on_upload_failure(self, client, mock_supabase_sdk):
+        storage_bucket = MagicMock()
+        mock_supabase_sdk.storage.from_.return_value = storage_bucket
+        storage_bucket.upload.side_effect = Exception("bucket not found")
+
+        url = await client.upload_image(b"fake-image-bytes", "photo.jpg")
+
+        assert url is None
 
 
 class TestSaveReport:
@@ -84,6 +94,16 @@ class TestSaveReport:
         assert row["overall_score"] == 72.5
         assert row["grade"] == "B"
         assert row["image_url"] == "https://img.url"
+
+    async def test_returns_none_on_insert_failure(self, client, mock_supabase_sdk, sample_report):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.insert.return_value = table
+        table.execute.side_effect = Exception("relation does not exist")
+
+        report_id = await client.save_report(sample_report)
+
+        assert report_id is None
 
 
 class TestGetReport:

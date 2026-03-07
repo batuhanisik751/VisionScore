@@ -1,24 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { MOCK_REPORTS, getGradeColor, getGradeBg, type AnalysisReport } from "./mock-data";
+import { getGradeColor, getGradeBg, type AnalysisReport } from "./mock-data";
 import { ScoreBadge } from "./score-badge";
-import { Search, LayoutGrid, List, Calendar, Trash2, ImagePlus, Filter } from "lucide-react";
+import { Search, LayoutGrid, List, Calendar, Trash2, ImagePlus, Filter, Loader2 } from "lucide-react";
+
+interface DbRow {
+  id: string;
+  created_at: string;
+  image_url: string | null;
+  overall_score: number;
+  grade: string;
+  full_report: AnalysisReport;
+}
+
+function rowToReport(row: DbRow): AnalysisReport {
+  return {
+    ...row.full_report,
+    id: row.id,
+    image_url: row.image_url || row.full_report.image_url || "",
+    timestamp: row.created_at,
+  };
+}
 
 export function HistoryPage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [gradeFilter, setGradeFilter] = useState<string>("");
-  const [reports, setReports] = useState(MOCK_REPORTS);
+  const [reports, setReports] = useState<AnalysisReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const fetchReports = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/v1/reports?limit=100");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Failed to load reports (${res.status})`);
+      }
+      const data = await res.json();
+      setReports(data.reports.map((r: DbRow) => rowToReport(r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load reports");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filtered = reports.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
-        r.ai_feedback.genre.toLowerCase().includes(q) ||
-        r.ai_feedback.mood.toLowerCase().includes(q) ||
+        (r.ai_feedback?.genre?.toLowerCase().includes(q) ?? false) ||
+        (r.ai_feedback?.mood?.toLowerCase().includes(q) ?? false) ||
         r.image_meta.path.toLowerCase().includes(q) ||
         r.grade.toLowerCase().includes(q)
       );
@@ -26,9 +69,21 @@ export function HistoryPage() {
     return true;
   });
 
-  const handleDelete = (id: string) => {
-    setReports((prev) => prev.filter((r) => r.id !== id));
-    setDeleteId(null);
+  const handleDelete = async (id: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/reports/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Delete failed (${res.status})`);
+      }
+      setReports((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+      setDeleteId(null);
+    }
   };
 
   const formatDate = (ts: string) => {
@@ -96,8 +151,23 @@ export function HistoryPage() {
         </div>
       </div>
 
+      {/* Error */}
+      {error && (
+        <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 text-gray-500 animate-spin mb-4" />
+          <p className="text-sm text-gray-500">Loading reports...</p>
+        </div>
+      )}
+
       {/* Empty State */}
-      {filtered.length === 0 && (
+      {!loading && filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="p-4 rounded-full bg-white/[0.04] mb-4">
             <ImagePlus className="w-8 h-8 text-gray-600" />
@@ -116,7 +186,7 @@ export function HistoryPage() {
       )}
 
       {/* Grid View */}
-      {viewMode === "grid" && filtered.length > 0 && (
+      {!loading && viewMode === "grid" && filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((report) => (
             <ReportGridCard
@@ -131,7 +201,7 @@ export function HistoryPage() {
       )}
 
       {/* List View */}
-      {viewMode === "list" && filtered.length > 0 && (
+      {!loading && viewMode === "list" && filtered.length > 0 && (
         <div className="space-y-2">
           {filtered.map((report) => (
             <ReportListRow
@@ -160,9 +230,10 @@ export function HistoryPage() {
               </button>
               <button
                 onClick={() => handleDelete(deleteId)}
+                disabled={deleting}
                 className="flex-1 py-2 rounded-lg text-sm bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
               >
-                Delete
+                {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>
@@ -189,7 +260,13 @@ function ReportGridCard({
       className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden cursor-pointer hover:bg-white/[0.05] hover:border-white/[0.1] transition-all group"
     >
       <div className="relative h-44 overflow-hidden">
-        <img src={report.image_url} alt={report.image_meta.path} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        {report.image_url ? (
+          <img src={report.image_url} alt={report.image_meta.path} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <div className="w-full h-full bg-white/[0.04] flex items-center justify-center text-gray-600">
+            <ImagePlus className="w-8 h-8" />
+          </div>
+        )}
         <div className="absolute top-3 right-3">
           <ScoreBadge score={report.overall_score} grade={report.grade} size="sm" />
         </div>
@@ -208,9 +285,11 @@ function ReportGridCard({
           <span className={`px-2 py-0.5 rounded-full text-xs border ${getGradeBg(report.grade)} ${getGradeColor(report.grade)}`}>
             {report.grade}
           </span>
-          <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.05] text-gray-400 border border-white/[0.08]">
-            {report.ai_feedback.genre}
-          </span>
+          {report.ai_feedback?.genre && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.05] text-gray-400 border border-white/[0.08]">
+              {report.ai_feedback.genre}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <Calendar className="w-3 h-3" />
@@ -237,16 +316,24 @@ function ReportListRow({
       onClick={onView}
       className="flex items-center gap-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 cursor-pointer hover:bg-white/[0.05] transition-all group"
     >
-      <img src={report.image_url} alt="" className="w-16 h-12 rounded-lg object-cover" />
+      {report.image_url ? (
+        <img src={report.image_url} alt="" className="w-16 h-12 rounded-lg object-cover" />
+      ) : (
+        <div className="w-16 h-12 rounded-lg bg-white/[0.04] flex items-center justify-center text-gray-600">
+          <ImagePlus className="w-4 h-4" />
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-300 truncate">{report.image_meta.path}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs border ${getGradeBg(report.grade)} ${getGradeColor(report.grade)}`}>
             {report.grade}
           </span>
-          <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.05] text-gray-400 border border-white/[0.08]">
-            {report.ai_feedback.genre}
-          </span>
+          {report.ai_feedback?.genre && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.05] text-gray-400 border border-white/[0.08]">
+              {report.ai_feedback.genre}
+            </span>
+          )}
         </div>
         <span className="text-xs text-gray-500">{formatDate(report.timestamp)}</span>
       </div>
