@@ -1,9 +1,9 @@
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useLocation } from "react-router";
 import { ScoreBadge } from "./score-badge";
 import { CategoryCard } from "./category-card";
 import { FeedbackSection } from "./feedback-section";
 import { MetadataPanel } from "./metadata-panel";
-import { MOCK_REPORTS, getGradeBg, getGradeColor } from "./mock-data";
+import { MOCK_REPORTS, getGradeBg, getGradeColor, type AnalysisReport } from "./mock-data";
 import {
   Aperture,
   Palette,
@@ -25,7 +25,14 @@ interface ResultsPageProps {
 export function ResultsPage({ saved }: ResultsPageProps) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const report = MOCK_REPORTS.find((r) => r.id === id) || MOCK_REPORTS[0];
+  const location = useLocation();
+
+  const state = location.state as { report?: AnalysisReport; warnings?: string[]; imageUrl?: string } | null;
+
+  const report: AnalysisReport | undefined = state?.report
+    ? { ...state.report, id: "live", image_url: state.imageUrl || "" }
+    : MOCK_REPORTS.find((r) => r.id === id) || MOCK_REPORTS[0];
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!report) return null;
@@ -82,52 +89,62 @@ export function ResultsPage({ saved }: ResultsPageProps) {
     y += 4;
 
     // Technical
-    addLine("Technical Quality (25%)", 12, "bold");
-    addScoreRow("Sharpness", report.technical.sharpness);
-    addScoreRow("Exposure", report.technical.exposure);
-    addScoreRow("Noise", report.technical.noise);
-    addScoreRow("Dynamic Range", report.technical.dynamic_range);
-    addScoreRow("Overall", report.technical.overall);
-    y += 3;
+    if (report.technical) {
+      addLine("Technical Quality (25%)", 12, "bold");
+      addScoreRow("Sharpness", report.technical.sharpness);
+      addScoreRow("Exposure", report.technical.exposure);
+      addScoreRow("Noise", report.technical.noise);
+      addScoreRow("Dynamic Range", report.technical.dynamic_range);
+      addScoreRow("Overall", report.technical.overall);
+      y += 3;
+    }
 
     // Aesthetic
-    addLine("Aesthetic Quality (30%)", 12, "bold");
-    addScoreRow("NIMA Score", report.aesthetic.nima_score);
-    addScoreRow("Confidence", report.aesthetic.confidence * 100);
-    addScoreRow("Overall", report.aesthetic.overall);
-    y += 3;
+    if (report.aesthetic) {
+      addLine("Aesthetic Quality (30%)", 12, "bold");
+      addScoreRow("NIMA Score", report.aesthetic.nima_score);
+      addScoreRow("Confidence", report.aesthetic.confidence * 100);
+      addScoreRow("Overall", report.aesthetic.overall);
+      y += 3;
+    }
 
     // Composition
-    addLine("Composition (25%)", 12, "bold");
-    addScoreRow("Rule of Thirds", report.composition.rule_of_thirds);
-    addScoreRow("Subject Position", report.composition.subject_position);
-    addScoreRow("Horizon", report.composition.horizon);
-    addScoreRow("Balance", report.composition.balance);
-    addScoreRow("Overall", report.composition.overall);
-    y += 3;
+    if (report.composition) {
+      addLine("Composition (25%)", 12, "bold");
+      addScoreRow("Rule of Thirds", report.composition.rule_of_thirds);
+      addScoreRow("Subject Position", report.composition.subject_position);
+      addScoreRow("Horizon", report.composition.horizon);
+      addScoreRow("Balance", report.composition.balance);
+      addScoreRow("Overall", report.composition.overall);
+      y += 3;
+    }
 
     // AI Feedback
-    addLine("AI Feedback (20%)", 12, "bold");
-    addScoreRow("AI Score", report.ai_feedback.score);
-    y += 2;
-    addLine(`Genre: ${report.ai_feedback.genre}  |  Mood: ${report.ai_feedback.mood}`, 10);
-    addLine(report.ai_feedback.description, 10);
-    y += 2;
+    if (report.ai_feedback) {
+      addLine("AI Feedback (20%)", 12, "bold");
+      addScoreRow("AI Score", report.ai_feedback.score);
+      y += 2;
+      addLine(`Genre: ${report.ai_feedback.genre}  |  Mood: ${report.ai_feedback.mood}`, 10);
+      addLine(report.ai_feedback.description, 10);
+      y += 2;
 
-    addLine("Strengths:", 10, "bold");
-    report.ai_feedback.strengths.forEach((s) => addLine(`  + ${s}`));
-    y += 1;
-    addLine("Improvements:", 10, "bold");
-    report.ai_feedback.improvements.forEach((s) => addLine(`  ~ ${s}`));
-    y += 2;
-    addLine(report.ai_feedback.reasoning, 9);
+      addLine("Strengths:", 10, "bold");
+      report.ai_feedback.strengths.forEach((s) => addLine(`  + ${s}`));
+      y += 1;
+      addLine("Improvements:", 10, "bold");
+      report.ai_feedback.improvements.forEach((s) => addLine(`  ~ ${s}`));
+      y += 2;
+      addLine(report.ai_feedback.reasoning, 9);
+    }
 
     // EXIF
-    y += 4;
-    addLine("Image Metadata", 12, "bold");
-    const exif = report.image_meta.exif;
-    addLine(`Camera: ${exif.camera}  |  ISO: ${exif.iso}  |  Aperture: ${exif.aperture}`);
-    addLine(`Shutter: ${exif.shutter_speed}  |  Focal Length: ${exif.focal_length}${exif.lens ? `  |  Lens: ${exif.lens}` : ""}`);
+    const exif = report.image_meta?.exif;
+    if (exif) {
+      y += 4;
+      addLine("Image Metadata", 12, "bold");
+      if (exif.camera) addLine(`Camera: ${exif.camera}  |  ISO: ${exif.iso}  |  Aperture: ${exif.aperture}`);
+      if (exif.shutter_speed) addLine(`Shutter: ${exif.shutter_speed}  |  Focal Length: ${exif.focal_length}${exif.lens ? `  |  Lens: ${exif.lens}` : ""}`);
+    }
 
     doc.save(`visionscore-${report.image_meta.path.replace(/\.[^.]+$/, "")}.pdf`);
   };
@@ -204,54 +221,68 @@ export function ResultsPage({ saved }: ResultsPageProps) {
 
       {/* Category Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <CategoryCard
-          title="Technical"
-          weight={25}
-          overall={report.technical.overall}
-          icon={<Aperture className="w-5 h-5 text-cyan-400" />}
-          subScores={[
-            { label: "Sharpness", value: report.technical.sharpness },
-            { label: "Exposure", value: report.technical.exposure },
-            { label: "Noise", value: report.technical.noise },
-            { label: "Dynamic Range", value: report.technical.dynamic_range },
-          ]}
-        />
-        <CategoryCard
-          title="Aesthetic"
-          weight={30}
-          overall={report.aesthetic.overall}
-          icon={<Palette className="w-5 h-5 text-pink-400" />}
-          subScores={[
-            { label: "NIMA Score", value: report.aesthetic.nima_score },
-            { label: "Confidence", value: report.aesthetic.confidence * 100 },
-          ]}
-        />
-        <CategoryCard
-          title="Composition"
-          weight={25}
-          overall={report.composition.overall}
-          icon={<Grid3x3 className="w-5 h-5 text-amber-400" />}
-          subScores={[
-            { label: "Rule of Thirds", value: report.composition.rule_of_thirds },
-            { label: "Subject Position", value: report.composition.subject_position },
-            { label: "Horizon", value: report.composition.horizon },
-            { label: "Balance", value: report.composition.balance },
-          ]}
-        />
-        <CategoryCard
-          title="AI Feedback"
-          weight={20}
-          overall={report.ai_feedback.score}
-          icon={<Sparkles className="w-5 h-5 text-purple-400" />}
-          subScores={[{ label: "AI Score", value: report.ai_feedback.score }]}
-        />
+        {report.technical && (
+          <CategoryCard
+            title="Technical"
+            weight={25}
+            overall={report.technical.overall}
+            icon={<Aperture className="w-5 h-5 text-cyan-400" />}
+            subScores={[
+              { label: "Sharpness", value: report.technical.sharpness },
+              { label: "Exposure", value: report.technical.exposure },
+              { label: "Noise", value: report.technical.noise },
+              { label: "Dynamic Range", value: report.technical.dynamic_range },
+            ]}
+          />
+        )}
+        {report.aesthetic && (
+          <CategoryCard
+            title="Aesthetic"
+            weight={30}
+            overall={report.aesthetic.overall}
+            icon={<Palette className="w-5 h-5 text-pink-400" />}
+            subScores={[
+              { label: "NIMA Score", value: report.aesthetic.nima_score },
+              { label: "Confidence", value: report.aesthetic.confidence * 100 },
+            ]}
+          />
+        )}
+        {report.composition && (
+          <CategoryCard
+            title="Composition"
+            weight={25}
+            overall={report.composition.overall}
+            icon={<Grid3x3 className="w-5 h-5 text-amber-400" />}
+            subScores={[
+              { label: "Rule of Thirds", value: report.composition.rule_of_thirds },
+              { label: "Subject Position", value: report.composition.subject_position },
+              { label: "Horizon", value: report.composition.horizon },
+              { label: "Balance", value: report.composition.balance },
+            ]}
+          />
+        )}
+        {report.ai_feedback && (
+          <CategoryCard
+            title="AI Feedback"
+            weight={20}
+            overall={report.ai_feedback.score}
+            icon={<Sparkles className="w-5 h-5 text-purple-400" />}
+            subScores={[{ label: "AI Score", value: report.ai_feedback.score }]}
+          />
+        )}
       </div>
 
       {/* AI Feedback & Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <FeedbackSection feedback={report.ai_feedback} />
-        </div>
+        {report.ai_feedback ? (
+          <div className="lg:col-span-2">
+            <FeedbackSection feedback={report.ai_feedback} />
+          </div>
+        ) : (
+          <div className="lg:col-span-2 flex items-center justify-center bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8 text-gray-500 text-sm">
+            AI feedback not available for this analysis
+          </div>
+        )}
         <div className="space-y-4">
           <MetadataPanel meta={report.image_meta} />
           <button

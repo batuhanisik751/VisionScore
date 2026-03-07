@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Upload, Image, X, Settings2, Eye, EyeOff } from "lucide-react";
-import { MOCK_REPORTS } from "./mock-data";
+import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export function UploadPage() {
   const navigate = useNavigate();
@@ -12,6 +11,7 @@ export function UploadPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
   const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((f: File) => {
@@ -31,12 +31,39 @@ export function UploadPage() {
     [handleFile]
   );
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
+    if (!file) return;
     setAnalyzing(true);
-    // Simulate API call
-    setTimeout(() => {
-      navigate("/results/rpt-001");
-    }, 2500);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const params = new URLSearchParams();
+      if (skipAI) params.set("skip_ai", "true");
+      const w = `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`;
+      params.set("weights", w);
+
+      const res = await fetch(`/api/v1/analyze?${params}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Analysis failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      navigate("/results/new", {
+        state: { report: data.report, warnings: data.warnings, imageUrl: preview },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const updateWeight = (key: keyof typeof weights, value: number) => {
@@ -173,6 +200,13 @@ export function UploadPage() {
                   />
                 </div>
               ))}
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {error}
             </div>
           )}
 
