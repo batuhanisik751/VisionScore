@@ -127,7 +127,23 @@ export function ResultsPage({ saved }: ResultsPageProps) {
     }
   };
 
-  const handleExport = () => {
+  const loadImageAsDataUrl = (src: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")!.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  };
+
+  const handleExport = async () => {
     const doc = new jsPDF();
     const margin = 20;
     let y = margin;
@@ -165,7 +181,19 @@ export function ResultsPage({ saved }: ResultsPageProps) {
 
     // Header
     addLine("VisionScore Analysis Report", 20, "bold");
-    addLine(report.image_meta.path, 11, "normal");
+
+    // Embed the photo
+    if (report.image_url) {
+      const dataUrl = await loadImageAsDataUrl(report.image_url);
+      if (dataUrl) {
+        const pageWidth = 170;
+        const aspect = report.image_meta.height / report.image_meta.width;
+        const imgHeight = Math.min(pageWidth * aspect, 100);
+        doc.addImage(dataUrl, "JPEG", margin, y, pageWidth, imgHeight);
+        y += imgHeight + 4;
+      }
+    }
+
     addLine(`${report.image_meta.width} × ${report.image_meta.height} | ${report.image_meta.format} | ${new Date(report.timestamp).toLocaleDateString()}`, 9);
     y += 4;
 
@@ -231,7 +259,8 @@ export function ResultsPage({ saved }: ResultsPageProps) {
       if (exif.shutter_speed) addLine(`Shutter: ${exif.shutter_speed}  |  Focal Length: ${exif.focal_length}${exif.lens ? `  |  Lens: ${exif.lens}` : ""}`);
     }
 
-    doc.save(`visionscore-${report.image_meta.path.replace(/\.[^.]+$/, "")}.pdf`);
+    const safeName = report.image_meta.path.split("/").pop()?.replace(/\.[^.]+$/, "") || "report";
+    doc.save(`visionscore-${safeName}.pdf`);
   };
 
   return (
