@@ -3,16 +3,19 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Request,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 
 from visionscore import __version__
 from visionscore.api.schemas import (
@@ -30,6 +33,8 @@ from visionscore.pipeline.loader import SUPPORTED_EXTENSIONS
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +70,14 @@ def _validate_extension(filename: str | None) -> str:
             f"Unsupported format '{suffix}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
         )
     return suffix
+
+
+def _save_image_locally(content: bytes, filename: str) -> str:
+    """Save image to local uploads dir and return the API URL path."""
+    suffix = Path(filename).suffix.lower() or ".jpg"
+    name = f"{uuid4().hex}{suffix}"
+    (UPLOADS_DIR / name).write_bytes(content)
+    return f"/api/v1/uploads/{name}"
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -175,6 +188,21 @@ async def analyze_image(
     return AnalyzeResponse(report=report, warnings=warnings)
 
 
+@router.get(
+    "/uploads/{filename}",
+    tags=["system"],
+    summary="Serve a locally stored image",
+)
+async def serve_upload(filename: str):
+    """Serve an uploaded image from local storage."""
+    # Prevent path traversal
+    safe = Path(filename).name
+    path = UPLOADS_DIR / safe
+    if not path.is_file():
+        raise HTTPException(404, "Image not found")
+    return FileResponse(path)
+
+
 @router.post(
     "/analyze/save",
     response_model=SavedReportResponse,
@@ -198,6 +226,9 @@ async def analyze_and_save(
     report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights=None)
 
     image_url = await db.upload_image(content, file.filename or "image.jpg")
+    if image_url is None:
+        image_url = _save_image_locally(content, file.filename or "image.jpg")
+
     report_id = await db.save_report(report, image_url=image_url)
 
     if report_id is None:
@@ -208,6 +239,49 @@ async def analyze_and_save(
         )
 
     return SavedReportResponse(id=report_id, report=report, image_url=image_url, warnings=warnings)
+
+
+@router.post(
+    "/reports",
+    response_model=SavedReportResponse,
+    tags=["reports"],
+    summary="Save an existing analysis report",
+    responses={
+        400: {"description": "Invalid file or report data"},
+        503: {"description": "Supabase not configured"},
+    },
+)
+async def save_report(
+    request: Request,
+    file: UploadFile = File(...),
+    report_json: str = Form(...),
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Save an already-analyzed report with its image (no re-analysis)."""
+    import json
+    from visionscore.models import AnalysisReport
+
+    try:
+        report_data = json.loads(report_json)
+        report = AnalysisReport(**report_data)
+    except Exception:
+        raise HTTPException(400, "Invalid report data")
+
+    content = await _read_upload(file)
+
+    image_url = await db.upload_image(content, file.filename or "image.jpg")
+    if image_url is None:
+        image_url = _save_image_locally(content, file.filename or "image.jpg")
+
+    report_id = await db.save_report(report, image_url=image_url)
+
+    if report_id is None:
+        raise HTTPException(
+            503,
+            "Saving failed. Ensure the 'analysis_reports' table exists in Supabase.",
+        )
+
+    return SavedReportResponse(id=report_id, report=report, image_url=image_url)
 
 
 @router.get(

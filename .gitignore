@@ -42,6 +42,9 @@ models/
 output/
 *.html
 
+# Uploaded images (local storage)
+uploads/
+
 # Generated demo files
 examples/sample_images/
 examples/reports/

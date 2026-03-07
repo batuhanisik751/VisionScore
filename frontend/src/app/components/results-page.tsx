@@ -97,7 +97,7 @@ export function ResultsPage({ saved }: ResultsPageProps) {
 
   const handleSave = async () => {
     const originalFile = state?.file;
-    if (!originalFile) {
+    if (!originalFile || !state?.report) {
       setSaveError("Original file not available for saving");
       return;
     }
@@ -107,8 +107,9 @@ export function ResultsPage({ saved }: ResultsPageProps) {
     try {
       const formData = new FormData();
       formData.append("file", originalFile);
+      formData.append("report_json", JSON.stringify(state.report));
 
-      const res = await fetch("/api/v1/analyze/save", {
+      const res = await fetch("/api/v1/reports", {
         method: "POST",
         body: formData,
       });
