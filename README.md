@@ -4,7 +4,7 @@ AI-powered photo evaluation tool that analyzes images and produces meaningful sc
 
 ## Project Status
 
-Phase 6 complete -- full analysis pipeline with scoring, grading, and report generation.
+Phase 7 complete -- full analysis pipeline with FastAPI REST service and Supabase integration.
 
 ## What's Implemented
 
@@ -18,16 +18,18 @@ Phase 6 complete -- full analysis pipeline with scoring, grading, and report gen
 - **Multiple Output Formats** - Rich terminal, JSON (`--output json`), Markdown (`--output markdown`), save to file (`--save report.json`)
 - **Image Pipeline** - Loading, validation, resizing, EXIF metadata extraction
 - **Model Download Script** - `python scripts/download_models.py` to fetch NIMA weights
+- **REST API (FastAPI)** - `POST /analyze` for image upload + analysis, `POST /analyze/save` with Supabase persistence, reports CRUD, health check, Swagger UI at `/docs`
+- **Supabase Integration** - Image storage, report persistence, graceful degradation when unconfigured
 
 ## Planned Features
 
-- REST API with Supabase (DB + Auth + Storage)
 - Batch analysis, web dashboard, image comparison
 
 ## Tech Stack
 
 - Python 3.11+, PyTorch, torchvision, OpenCV, Pillow, NumPy
-- Typer (CLI), Pydantic (data models), Rich (terminal output)
+- Typer (CLI), FastAPI (REST API), Pydantic (data models), Rich (terminal output)
+- Supabase (DB + Storage), Ollama + LLaVA (AI feedback)
 - pytest, ruff, mypy
 
 ## Project Structure
@@ -38,9 +40,11 @@ src/visionscore/       # Main package
   pipeline/            # Image loading, metadata, orchestration
   scoring/             # Score aggregation, grading
   output/              # JSON, CLI, markdown, visual reports
-  api/                 # FastAPI web service
-tests/                 # pytest test suite
+  api/                 # FastAPI web service + Supabase client
+tests/                 # pytest test suite (155 tests)
 scripts/               # Model download, benchmarks
+sql/                   # Supabase schema (analysis_reports table)
+docs/                  # API reference documentation
 ```
 
 ## Development Setup
@@ -50,8 +54,8 @@ scripts/               # Model download, benchmarks
 git clone https://github.com/yourusername/VisionScore.git
 cd VisionScore
 
-# Install in dev mode
-pip install -e ".[dev]"
+# Install in dev mode (with API support)
+pip install -e ".[dev,api]"
 
 # Download NIMA model weights
 python scripts/download_models.py
@@ -70,6 +74,10 @@ visionscore analyze photo.jpg --skip-ai --weights 30:30:30:10
 
 # View image metadata
 visionscore info photo.jpg
+
+# Start the API server
+uvicorn visionscore.api.app:app --reload
+# Then: curl -X POST http://localhost:8000/api/v1/analyze -F "file=@photo.jpg"
 ```
 
 ## Claude Code Integration

@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     model_dir: Path = Path.home() / ".visionscore" / "models"
     max_image_size: int = 1024
+    max_upload_mb: int = 20
     output_format: str = "text"
     device: str = "auto"
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
     analysis_weights: AnalysisWeights = AnalysisWeights()
     thresholds: Thresholds = Thresholds()
