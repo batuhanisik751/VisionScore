@@ -12,5 +12,4 @@ class BaseAnalyzer(ABC):
     """Abstract base for all VisionScore analyzers."""
 
     @abstractmethod
-    def analyze(self, image: LoadedImage, metadata: ImageMeta | None = None) -> BaseModel:
-        ...
+    def analyze(self, image: LoadedImage, metadata: ImageMeta | None = None) -> BaseModel: ...

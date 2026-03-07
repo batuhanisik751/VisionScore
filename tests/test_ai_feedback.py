@@ -109,30 +109,22 @@ class TestJsonParsing:
         result = analyzer._parse_response(raw)
         assert result.genre == "landscape"
 
-    def test_parse_json_with_surrounding_text(
-        self, analyzer: AIFeedbackAnalyzer
-    ) -> None:
+    def test_parse_json_with_surrounding_text(self, analyzer: AIFeedbackAnalyzer) -> None:
         raw = f"Here is my analysis:\n{VALID_JSON_RESPONSE}\nI hope this helps!"
         result = analyzer._parse_response(raw)
         assert result.genre == "landscape"
 
-    def test_parse_malformed_returns_default(
-        self, analyzer: AIFeedbackAnalyzer
-    ) -> None:
+    def test_parse_malformed_returns_default(self, analyzer: AIFeedbackAnalyzer) -> None:
         result = analyzer._parse_response("This is not JSON at all.")
         assert result.description == "AI feedback unavailable"
         assert result.score == 50.0
 
-    def test_parse_empty_string_returns_default(
-        self, analyzer: AIFeedbackAnalyzer
-    ) -> None:
+    def test_parse_empty_string_returns_default(self, analyzer: AIFeedbackAnalyzer) -> None:
         result = analyzer._parse_response("")
         assert result.description == "AI feedback unavailable"
         assert result.score == 50.0
 
-    def test_parse_missing_fields_uses_defaults(
-        self, analyzer: AIFeedbackAnalyzer
-    ) -> None:
+    def test_parse_missing_fields_uses_defaults(self, analyzer: AIFeedbackAnalyzer) -> None:
         raw = json.dumps({"score": 65})
         result = analyzer._parse_response(raw)
         assert result.score == 65.0
@@ -265,9 +257,7 @@ class TestAnalyzeIntegration:
             result = analyzer.analyze(image)
         assert isinstance(result, AIFeedback)
 
-    def test_all_fields_populated(
-        self, analyzer: AIFeedbackAnalyzer, normal_image_path
-    ) -> None:
+    def test_all_fields_populated(self, analyzer: AIFeedbackAnalyzer, normal_image_path) -> None:
         image = load_image(normal_image_path)
         with patch.object(
             analyzer._client,
@@ -282,9 +272,7 @@ class TestAnalyzeIntegration:
         assert len(result.improvements) == 3
         assert result.reasoning != ""
 
-    def test_score_in_valid_range(
-        self, analyzer: AIFeedbackAnalyzer, normal_image_path
-    ) -> None:
+    def test_score_in_valid_range(self, analyzer: AIFeedbackAnalyzer, normal_image_path) -> None:
         image = load_image(normal_image_path)
         with patch.object(
             analyzer._client,

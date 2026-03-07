@@ -119,8 +119,7 @@ class CompositionAnalyzer(BaseAnalyzer):
     def _analyze_rule_of_thirds(self, centroid: tuple[float, float]) -> float:
         """Score how close the subject centroid is to a power point."""
         min_dist = min(
-            math.sqrt((centroid[0] - px) ** 2 + (centroid[1] - py) ** 2)
-            for px, py in _POWER_POINTS
+            math.sqrt((centroid[0] - px) ** 2 + (centroid[1] - py) ** 2) for px, py in _POWER_POINTS
         )
         return max(0.0, min(100.0, 100.0 * (1.0 - (min_dist / _MAX_POWER_DIST) ** 0.7)))
 
@@ -221,12 +220,7 @@ class CompositionAnalyzer(BaseAnalyzer):
         edge_bottom = edges[mid_y:, :].sum() / edge_total
         edge_diff_tb = abs(edge_top - edge_bottom) * 2.0
 
-        imbalance = (
-            0.3 * lum_diff_lr
-            + 0.1 * lum_diff_tb
-            + 0.3 * edge_diff_lr
-            + 0.1 * edge_diff_tb
-        )
+        imbalance = 0.3 * lum_diff_lr + 0.1 * lum_diff_tb + 0.3 * edge_diff_lr + 0.1 * edge_diff_tb
         imbalance = min(1.0, imbalance)
 
         return max(0.0, min(100.0, 100.0 * (1.0 - imbalance) ** 1.5))

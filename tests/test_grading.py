@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from visionscore.models import Grade
 from visionscore.scoring.grading import assign_grade, grade_color

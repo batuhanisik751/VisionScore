@@ -42,6 +42,10 @@ models/
 output/
 *.html
 
+# Generated demo files
+examples/sample_images/
+examples/reports/
+
 # Testing
 .pytest_cache/
 htmlcov/

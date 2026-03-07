@@ -114,11 +114,7 @@ class TechnicalAnalyzer(BaseAnalyzer):
 
         convolved = cv2.filter2D(gray.astype(np.float64), -1, kernel)
 
-        sigma = (
-            np.sum(np.abs(convolved))
-            * math.sqrt(math.pi / 2)
-            / (6.0 * (w - 2) * (h - 2))
-        )
+        sigma = np.sum(np.abs(convolved)) * math.sqrt(math.pi / 2) / (6.0 * (w - 2) * (h - 2))
 
         if sigma < 0.01:
             return 100.0

@@ -62,8 +62,7 @@ def _validate_extension(filename: str | None) -> str:
     if suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             400,
-            f"Unsupported format '{suffix}'. "
-            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+            f"Unsupported format '{suffix}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
         )
     return suffix
 
@@ -75,9 +74,7 @@ async def _read_upload(file: UploadFile) -> bytes:
     while chunk := await file.read(8192):
         total += len(chunk)
         if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                413, f"File too large. Max: {MAX_UPLOAD_BYTES // (1024 * 1024)}MB"
-            )
+            raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_BYTES // (1024 * 1024)}MB")
         chunks.append(chunk)
     if total == 0:
         raise HTTPException(400, "Uploaded file is empty")
@@ -198,16 +195,12 @@ async def analyze_and_save(
     """Upload an image, run analysis, store image and report in Supabase."""
     suffix = _validate_extension(file.filename)
     content = await _read_upload(file)
-    report, warnings = await _run_analysis(
-        content, suffix, request, skip_ai, weights=None
-    )
+    report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights=None)
 
     image_url = await db.upload_image(content, file.filename or "image.jpg")
     report_id = await db.save_report(report, image_url=image_url)
 
-    return SavedReportResponse(
-        id=report_id, report=report, image_url=image_url, warnings=warnings
-    )
+    return SavedReportResponse(id=report_id, report=report, image_url=image_url, warnings=warnings)
 
 
 @router.get(
@@ -224,9 +217,7 @@ async def list_reports(
 ):
     """List saved analysis reports with pagination."""
     reports, total = await db.list_reports(limit=limit, offset=offset)
-    return ReportListResponse(
-        reports=reports, total=total, limit=limit, offset=offset
-    )
+    return ReportListResponse(reports=reports, total=total, limit=limit, offset=offset)
 
 
 @router.get(

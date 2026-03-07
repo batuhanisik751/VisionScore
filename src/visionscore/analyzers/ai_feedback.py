@@ -35,7 +35,9 @@ Rules:
 - Score guidelines: 0-20 poor, 21-40 below average, 41-60 average, 61-80 good, 81-100 excellent\
 """
 
-_USER_PROMPT = "Analyze this photograph as an expert photography critic. Respond with only the JSON object."
+_USER_PROMPT = (
+    "Analyze this photograph as an expert photography critic. Respond with only the JSON object."
+)
 
 
 class AIFeedbackAnalyzer(BaseAnalyzer):

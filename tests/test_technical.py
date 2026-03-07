@@ -25,7 +25,9 @@ class TestSharpness:
 
 
 class TestExposure:
-    def test_normal_exposure_scores_high(self, analyzer: TechnicalAnalyzer, normal_image_path: Path):
+    def test_normal_exposure_scores_high(
+        self, analyzer: TechnicalAnalyzer, normal_image_path: Path
+    ):
         result = analyzer.analyze(load_image(normal_image_path))
         assert result.exposure > 90
 
@@ -55,11 +57,15 @@ class TestDynamicRange:
 
 
 class TestOverallScore:
-    def test_returns_technical_score_model(self, analyzer: TechnicalAnalyzer, normal_image_path: Path):
+    def test_returns_technical_score_model(
+        self, analyzer: TechnicalAnalyzer, normal_image_path: Path
+    ):
         result = analyzer.analyze(load_image(normal_image_path))
         assert isinstance(result, TechnicalScore)
 
-    def test_overall_is_weighted_combination(self, analyzer: TechnicalAnalyzer, normal_image_path: Path):
+    def test_overall_is_weighted_combination(
+        self, analyzer: TechnicalAnalyzer, normal_image_path: Path
+    ):
         result = analyzer.analyze(load_image(normal_image_path))
         expected = round(
             result.sharpness * 0.35

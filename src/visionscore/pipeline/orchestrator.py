@@ -14,9 +14,7 @@ from visionscore.scoring.grading import assign_grade
 class AnalysisOrchestrator:
     """Coordinate the full analysis pipeline from image path to completed report."""
 
-    def __init__(
-        self, settings: Settings | None = None, skip_ai: bool = False
-    ) -> None:
+    def __init__(self, settings: Settings | None = None, skip_ai: bool = False) -> None:
         self._settings = settings or Settings()
         self._skip_ai = skip_ai
         self.warnings: list[str] = []
@@ -40,9 +38,7 @@ class AnalysisOrchestrator:
             from visionscore.analyzers.aesthetic import AestheticAnalyzer
 
             model_path = self._settings.model_dir / "nima_mobilenetv2.pth"
-            aes_analyzer = AestheticAnalyzer(
-                model_path=model_path, device=self._settings.device
-            )
+            aes_analyzer = AestheticAnalyzer(model_path=model_path, device=self._settings.device)
             aesthetic = aes_analyzer.analyze(image, metadata=meta)
         except FileNotFoundError:
             self.warnings.append(

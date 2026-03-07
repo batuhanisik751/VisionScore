@@ -41,12 +41,8 @@ def client(mock_supabase_sdk) -> SupabaseClient:
 @pytest.fixture
 def sample_report() -> AnalysisReport:
     return AnalysisReport(
-        image_meta=ImageMeta(
-            path="test.jpg", width=200, height=200, format="JPEG"
-        ),
-        technical=TechnicalScore(
-            sharpness=80, exposure=70, noise=60, dynamic_range=75, overall=71
-        ),
+        image_meta=ImageMeta(path="test.jpg", width=200, height=200, format="JPEG"),
+        technical=TechnicalScore(sharpness=80, exposure=70, noise=60, dynamic_range=75, overall=71),
         overall_score=72.5,
         grade=Grade.B,
     )
@@ -73,15 +69,11 @@ class TestUploadImage:
 
 
 class TestSaveReport:
-    async def test_inserts_and_returns_id(
-        self, client, mock_supabase_sdk, sample_report
-    ):
+    async def test_inserts_and_returns_id(self, client, mock_supabase_sdk, sample_report):
         table = MagicMock()
         mock_supabase_sdk.table.return_value = table
         table.insert.return_value = table
-        table.execute.return_value = MagicMock(
-            data=[{"id": "abc-123"}]
-        )
+        table.execute.return_value = MagicMock(data=[{"id": "abc-123"}])
 
         report_id = await client.save_report(sample_report, image_url="https://img.url")
 
@@ -100,9 +92,7 @@ class TestGetReport:
         mock_supabase_sdk.table.return_value = table
         table.select.return_value = table
         table.eq.return_value = table
-        table.execute.return_value = MagicMock(
-            data=[{"id": "abc-123", "overall_score": 72.5}]
-        )
+        table.execute.return_value = MagicMock(data=[{"id": "abc-123", "overall_score": 72.5}])
 
         result = await client.get_report("abc-123")
 
@@ -128,9 +118,7 @@ class TestListReports:
         table.select.return_value = table
         table.order.return_value = table
         table.range.return_value = table
-        table.execute.return_value = MagicMock(
-            data=[{"id": "1"}, {"id": "2"}], count=5
-        )
+        table.execute.return_value = MagicMock(data=[{"id": "1"}, {"id": "2"}], count=5)
 
         reports, total = await client.list_reports(limit=2, offset=0)
 
@@ -171,9 +159,7 @@ class TestDeleteReport:
 class TestGetSupabaseClient:
     def test_returns_none_when_unconfigured(self):
         with patch("visionscore.api.supabase_client.Settings") as MockSettings:
-            MockSettings.return_value = MagicMock(
-                supabase_url=None, supabase_key=None
-            )
+            MockSettings.return_value = MagicMock(supabase_url=None, supabase_key=None)
             result = get_supabase_client()
             assert result is None
 

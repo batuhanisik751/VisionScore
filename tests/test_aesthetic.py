@@ -127,8 +127,12 @@ class TestAestheticAnalyzer:
         analyzer = AestheticAnalyzer(model_path=Path("/nonexistent/model.pth"), device="cpu")
         bgr = np.zeros((100, 100, 3), dtype=np.uint8)
         dummy = LoadedImage(
-            original=bgr, resized=bgr, path=Path("test.jpg"),
-            format="JPEG", width=100, height=100,
+            original=bgr,
+            resized=bgr,
+            path=Path("test.jpg"),
+            format="JPEG",
+            width=100,
+            height=100,
         )
         with pytest.raises(FileNotFoundError, match="NIMA weights not found"):
             analyzer.analyze(dummy)
@@ -143,8 +147,10 @@ class TestAestheticAnalyzer:
 
 class TestDeviceDetection:
     def test_auto_selects_cpu_when_no_gpu(self):
-        with patch("torch.cuda.is_available", return_value=False), \
-             patch("torch.backends.mps.is_available", return_value=False):
+        with (
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_available", return_value=False),
+        ):
             analyzer = AestheticAnalyzer(device="auto")
             assert analyzer._device == torch.device("cpu")
 

@@ -25,9 +25,7 @@ class SupabaseClient:
 
         return await asyncio.to_thread(_upload)
 
-    async def save_report(
-        self, report: AnalysisReport, image_url: str | None = None
-    ) -> str:
+    async def save_report(self, report: AnalysisReport, image_url: str | None = None) -> str:
         """Insert analysis report into the database and return the row ID."""
         data = report.model_dump(mode="json")
         row = {
@@ -47,9 +45,7 @@ class SupabaseClient:
         }
 
         def _insert() -> str:
-            result = (
-                self._client.table("analysis_reports").insert(row).execute()
-            )
+            result = self._client.table("analysis_reports").insert(row).execute()
             return result.data[0]["id"]
 
         return await asyncio.to_thread(_insert)
@@ -59,18 +55,13 @@ class SupabaseClient:
 
         def _select() -> dict | None:
             result = (
-                self._client.table("analysis_reports")
-                .select("*")
-                .eq("id", report_id)
-                .execute()
+                self._client.table("analysis_reports").select("*").eq("id", report_id).execute()
             )
             return result.data[0] if result.data else None
 
         return await asyncio.to_thread(_select)
 
-    async def list_reports(
-        self, limit: int = 20, offset: int = 0
-    ) -> tuple[list[dict], int]:
+    async def list_reports(self, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         """List reports with pagination. Returns (rows, total_count)."""
 
         def _list() -> tuple[list[dict], int]:
@@ -89,12 +80,7 @@ class SupabaseClient:
         """Delete a report by ID. Returns True if a row was deleted."""
 
         def _delete() -> bool:
-            result = (
-                self._client.table("analysis_reports")
-                .delete()
-                .eq("id", report_id)
-                .execute()
-            )
+            result = self._client.table("analysis_reports").delete().eq("id", report_id).execute()
             return len(result.data) > 0
 
         return await asyncio.to_thread(_delete)

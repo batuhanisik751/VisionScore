@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from visionscore.config import AnalysisWeights
 from visionscore.models import (
@@ -19,9 +18,7 @@ def _meta() -> ImageMeta:
 
 
 def _tech(overall: float = 70.0) -> TechnicalScore:
-    return TechnicalScore(
-        sharpness=70, exposure=70, noise=70, dynamic_range=70, overall=overall
-    )
+    return TechnicalScore(sharpness=70, exposure=70, noise=70, dynamic_range=70, overall=overall)
 
 
 def _aesthetic(overall: float = 80.0) -> AestheticScore:
@@ -89,12 +86,8 @@ class TestScoreAggregator:
         assert agg.aggregate(report) == 85.0
 
     def test_custom_weights(self) -> None:
-        weights = AnalysisWeights(
-            technical=0.50, aesthetic=0.50, composition=0.0, ai_feedback=0.0
-        )
-        report = AnalysisReport(
-            image_meta=_meta(), technical=_tech(80), aesthetic=_aesthetic(60)
-        )
+        weights = AnalysisWeights(technical=0.50, aesthetic=0.50, composition=0.0, ai_feedback=0.0)
+        report = AnalysisReport(image_meta=_meta(), technical=_tech(80), aesthetic=_aesthetic(60))
         agg = ScoreAggregator(weights=weights)
         assert agg.aggregate(report) == 70.0
 

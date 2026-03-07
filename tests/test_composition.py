@@ -93,8 +93,12 @@ class TestHorizon:
         arr[:150, :] = (230, 200, 180)
         arr[150:, :] = (60, 120, 80)
         dummy = LoadedImage(
-            original=arr, resized=arr, path=Path("test.jpg"),
-            format="JPEG", width=400, height=300,
+            original=arr,
+            resized=arr,
+            path=Path("test.jpg"),
+            format="JPEG",
+            width=400,
+            height=300,
         )
         result = analyzer.analyze(dummy)
         assert result.horizon >= 70

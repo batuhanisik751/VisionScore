@@ -24,9 +24,7 @@ def _full_report() -> AnalysisReport:
         technical=TechnicalScore(
             sharpness=70, exposure=75, noise=80, dynamic_range=65, overall=72.5
         ),
-        aesthetic=AestheticScore(
-            nima_score=78, std_dev=1.2, confidence=0.85, overall=78.0
-        ),
+        aesthetic=AestheticScore(nima_score=78, std_dev=1.2, confidence=0.85, overall=78.0),
         composition=CompositionScore(
             rule_of_thirds=65, subject_position=70, horizon=75, balance=60, overall=67.5
         ),

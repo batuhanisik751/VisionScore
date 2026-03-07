@@ -28,12 +28,8 @@ def _reset_sb():
 @pytest.fixture
 def mock_report() -> AnalysisReport:
     return AnalysisReport(
-        image_meta=ImageMeta(
-            path="test.jpg", width=200, height=200, format="JPEG"
-        ),
-        technical=TechnicalScore(
-            sharpness=80, exposure=70, noise=60, dynamic_range=75, overall=71
-        ),
+        image_meta=ImageMeta(path="test.jpg", width=200, height=200, format="JPEG"),
+        technical=TechnicalScore(sharpness=80, exposure=70, noise=60, dynamic_range=75, overall=71),
         composition=CompositionScore(
             rule_of_thirds=80,
             subject_position=70,
@@ -56,10 +52,9 @@ def jpeg_bytes() -> bytes:
 
 @pytest.fixture
 def client(mock_report):
-    with patch(
-        "visionscore.pipeline.orchestrator.AnalysisOrchestrator"
-    ) as MockOrch, patch(
-        "visionscore.api.routes.get_supabase_client", return_value=None
+    with (
+        patch("visionscore.pipeline.orchestrator.AnalysisOrchestrator") as MockOrch,
+        patch("visionscore.api.routes.get_supabase_client", return_value=None),
     ):
         instance = MagicMock()
         instance.run.return_value = mock_report
@@ -170,10 +165,9 @@ class TestAnalyzeAndSave:
         mock_sb.upload_image = AsyncMock(return_value="https://img.url/photo.jpg")
         mock_sb.save_report = AsyncMock(return_value="report-id-123")
 
-        with patch(
-            "visionscore.pipeline.orchestrator.AnalysisOrchestrator"
-        ) as MockOrch, patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
+        with (
+            patch("visionscore.pipeline.orchestrator.AnalysisOrchestrator") as MockOrch,
+            patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb),
         ):
             instance = MagicMock()
             instance.run.return_value = mock_report
@@ -214,13 +208,9 @@ class TestReportsCRUD:
 
     def test_list_reports_with_mocked_supabase(self):
         mock_sb = MagicMock()
-        mock_sb.list_reports = AsyncMock(
-            return_value=([{"id": "1"}, {"id": "2"}], 2)
-        )
+        mock_sb.list_reports = AsyncMock(return_value=([{"id": "1"}, {"id": "2"}], 2))
 
-        with patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
-        ):
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
             from visionscore.api.app import app
 
             with TestClient(app) as c:
@@ -233,13 +223,9 @@ class TestReportsCRUD:
 
     def test_get_report_found(self):
         mock_sb = MagicMock()
-        mock_sb.get_report = AsyncMock(
-            return_value={"id": "abc", "overall_score": 75}
-        )
+        mock_sb.get_report = AsyncMock(return_value={"id": "abc", "overall_score": 75})
 
-        with patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
-        ):
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
             from visionscore.api.app import app
 
             with TestClient(app) as c:
@@ -252,9 +238,7 @@ class TestReportsCRUD:
         mock_sb = MagicMock()
         mock_sb.get_report = AsyncMock(return_value=None)
 
-        with patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
-        ):
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
             from visionscore.api.app import app
 
             with TestClient(app) as c:
@@ -266,9 +250,7 @@ class TestReportsCRUD:
         mock_sb = MagicMock()
         mock_sb.delete_report = AsyncMock(return_value=True)
 
-        with patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
-        ):
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
             from visionscore.api.app import app
 
             with TestClient(app) as c:
@@ -280,9 +262,7 @@ class TestReportsCRUD:
         mock_sb = MagicMock()
         mock_sb.delete_report = AsyncMock(return_value=False)
 
-        with patch(
-            "visionscore.api.routes.get_supabase_client", return_value=mock_sb
-        ):
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
             from visionscore.api.app import app
 
             with TestClient(app) as c:

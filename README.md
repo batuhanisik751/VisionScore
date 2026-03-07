@@ -1,66 +1,71 @@
 # VisionScore
 
-AI-powered photo evaluation tool that analyzes images and produces meaningful scores and feedback on technical quality, aesthetics, composition, and more.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/yourusername/VisionScore/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/VisionScore/actions)
 
-## Project Status
+AI-powered photo evaluation tool that scores images on technical quality, aesthetics, composition, and provides natural language feedback.
 
-Phase 7 complete -- full analysis pipeline with FastAPI REST service and Supabase integration.
+## Features
 
-## What's Implemented
+- **Technical Quality** -- Sharpness (Laplacian + Sobel), exposure (LAB histogram), noise (Immerkaer), dynamic range
+- **Aesthetic Scoring** -- NIMA (MobileNetV2) trained on AVA dataset with score distribution analysis
+- **Composition Analysis** -- Spectral residual saliency, rule of thirds, subject position, horizon, visual balance
+- **AI Feedback** -- Ollama + LLaVA for natural language critique, genre classification, strengths/improvements
+- **Score Aggregation** -- Weighted scoring with automatic redistribution. Grades: S/A/B/C/D/F
+- **CLI Tool** -- Rich terminal output with score bars, JSON, and Markdown reports
+- **REST API** -- FastAPI with Supabase persistence, Swagger UI at `/docs`
 
-- **Technical Quality Analysis** - Sharpness (Laplacian + Sobel), exposure (LAB histogram), noise (Immerkaer), dynamic range (percentile)
-- **Aesthetic Scoring (NIMA)** - MobileNetV2 trained on AVA dataset, score distribution analysis (mean, std dev, confidence), auto GPU/MPS/CPU detection
-- **Composition Analysis** - Spectral residual saliency, rule of thirds, subject position, horizon detection, visual balance
-- **AI Feedback** - Ollama + LLaVA vision LLM for natural language critique, genre classification, strengths/improvements, mood analysis. Graceful skip when Ollama unavailable.
-- **Score Aggregation** - Weighted scoring across all analyzers with automatic weight redistribution for missing components. Grade system: S/A/B/C/D/F.
-- **Pipeline Orchestrator** - Coordinates image loading, metadata extraction, analysis, scoring, and grading in one call.
-- **CLI Tool** - `visionscore analyze photo.jpg` with overall score panel, category bars, detailed breakdowns. Flags: `--skip-ai`, `--weights`, `--save`, `--output`
-- **Multiple Output Formats** - Rich terminal, JSON (`--output json`), Markdown (`--output markdown`), save to file (`--save report.json`)
-- **Image Pipeline** - Loading, validation, resizing, EXIF metadata extraction
-- **Model Download Script** - `python scripts/download_models.py` to fetch NIMA weights
-- **REST API (FastAPI)** - `POST /analyze` for image upload + analysis, `POST /analyze/save` with Supabase persistence, reports CRUD, health check, Swagger UI at `/docs`
-- **Supabase Integration** - Image storage, report persistence, graceful degradation when unconfigured
+## Architecture
 
-## Planned Features
-
-- Batch analysis, web dashboard, image comparison
-
-## Tech Stack
-
-- Python 3.11+, PyTorch, torchvision, OpenCV, Pillow, NumPy
-- Typer (CLI), FastAPI (REST API), Pydantic (data models), Rich (terminal output)
-- Supabase (DB + Storage), Ollama + LLaVA (AI feedback)
-- pytest, ruff, mypy
-
-## Project Structure
-
-```
-src/visionscore/       # Main package
-  analyzers/           # Technical, aesthetic, composition, AI feedback
-  pipeline/            # Image loading, metadata, orchestration
-  scoring/             # Score aggregation, grading
-  output/              # JSON, CLI, markdown, visual reports
-  api/                 # FastAPI web service + Supabase client
-tests/                 # pytest test suite (155 tests)
-scripts/               # Model download, benchmarks
-sql/                   # Supabase schema (analysis_reports table)
-docs/                  # API reference documentation
+```mermaid
+graph LR
+    A[Image Input] --> B[Preprocessing Pipeline]
+    B --> C[Technical Analyzer]
+    B --> D[Aesthetic Analyzer<br/>NIMA MobileNetV2]
+    B --> E[Composition Analyzer]
+    B --> F[AI Feedback<br/>Ollama + LLaVA]
+    C --> G[Score Aggregator]
+    D --> G
+    E --> G
+    F --> G
+    G --> H[Grade S/A/B/C/D/F]
+    H --> I[CLI Report]
+    H --> J[JSON Output]
+    H --> K[Markdown Report]
+    H --> L[REST API]
 ```
 
-## Development Setup
+## Scoring System
+
+| Category | Weight | Metrics |
+|----------|--------|---------|
+| Technical Quality | 25% | Sharpness, Exposure, Noise, Dynamic Range |
+| Aesthetic Quality | 30% | NIMA score (mapped from AVA 1-10 scale) |
+| Composition | 25% | Rule of Thirds, Subject Position, Horizon, Balance |
+| AI Feedback | 20% | LLM-extracted quality score |
+
+**Grades:** S (95-100), A (85-94), B (70-84), C (55-69), D (40-54), F (0-39)
+
+Weights are configurable via `--weights` flag or `AnalysisWeights` in config. Missing analyzers have their weight automatically redistributed.
+
+## Quick Start
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/VisionScore.git
-cd VisionScore
-
-# Install in dev mode (with API support)
+# Install
 pip install -e ".[dev,api]"
 
 # Download NIMA model weights
 python scripts/download_models.py
 
 # Analyze a photo
+visionscore analyze photo.jpg
+```
+
+## CLI Usage
+
+```bash
+# Full analysis with rich terminal output
 visionscore analyze photo.jpg
 
 # JSON output
@@ -69,24 +74,103 @@ visionscore analyze photo.jpg --output json
 # Save markdown report
 visionscore analyze photo.jpg --save report.md
 
-# Skip AI feedback, custom weights
-visionscore analyze photo.jpg --skip-ai --weights 30:30:30:10
+# Custom weights (technical:aesthetic:composition:ai)
+visionscore analyze photo.jpg --weights 30:30:30:10
 
-# View image metadata
+# Skip AI feedback (no Ollama required)
+visionscore analyze photo.jpg --skip-ai
+
+# View image metadata / EXIF
 visionscore info photo.jpg
-
-# Start the API server
-uvicorn visionscore.api.app:app --reload
-# Then: curl -X POST http://localhost:8000/api/v1/analyze -F "file=@photo.jpg"
 ```
 
-## Claude Code Integration
+## API Usage
 
-This project includes Claude Code automation:
+```bash
+# Start the server
+uvicorn visionscore.api.app:app --reload
 
-- **Post-change hook** (`.claude/settings.json`) -- automatically triggers after source file edits
-- **Post-change agent** (`.claude/agents/post-change.md`) -- creates tests, updates docs, suggests commit messages
+# Analyze an image
+curl -X POST http://localhost:8000/api/v1/analyze -F "file=@photo.jpg"
+
+# Analyze with custom weights, skip AI
+curl -X POST "http://localhost:8000/api/v1/analyze?skip_ai=true&weights=30:30:30:10" \
+  -F "file=@photo.jpg"
+
+# Health check
+curl http://localhost:8000/api/v1/health
+```
+
+With Supabase configured (`SUPABASE_URL`, `SUPABASE_KEY` in `.env`):
+
+```bash
+# Analyze and persist report
+curl -X POST http://localhost:8000/api/v1/analyze/save -F "file=@photo.jpg"
+
+# List saved reports
+curl http://localhost:8000/api/v1/reports
+
+# Get specific report
+curl http://localhost:8000/api/v1/reports/{id}
+```
+
+Full API docs at `http://localhost:8000/docs` (Swagger UI).
+
+## Configuration
+
+Environment variables (or `.env` file):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `llava` | Vision model for AI feedback |
+| `SUPABASE_URL` | (none) | Supabase project URL |
+| `SUPABASE_KEY` | (none) | Supabase anon key |
+| `API_HOST` | `0.0.0.0` | API server host |
+| `API_PORT` | `8000` | API server port |
+
+See `.env.example` for the full template.
+
+## Project Structure
+
+```
+src/visionscore/
+  analyzers/       # Technical, aesthetic, composition, AI feedback
+  pipeline/        # Image loading, metadata, orchestration
+  scoring/         # Score aggregation, grading
+  output/          # JSON, CLI, markdown reports
+  api/             # FastAPI + Supabase client
+tests/             # 155 tests (pytest)
+scripts/           # Model download
+sql/               # Supabase schema
+docs/              # API reference, scoring methodology
+```
+
+## Tech Stack
+
+- **Core:** Python 3.11+, PyTorch, OpenCV, Pillow, NumPy
+- **Models:** NIMA (MobileNetV2), Ollama + LLaVA
+- **CLI:** Typer, Rich
+- **API:** FastAPI, Supabase
+- **Data:** Pydantic, pydantic-settings
+- **Quality:** pytest, ruff, mypy
+
+## Development
+
+```bash
+# Run tests
+pytest
+
+# Lint
+ruff check src/ tests/
+
+# Format
+ruff format src/ tests/
+
+# Type check
+mypy src/visionscore/
+```
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+[MIT](LICENSE)
