@@ -15,6 +15,7 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 - **Score Aggregation** -- Weighted scoring with automatic redistribution. Grades: S/A/B/C/D/F
 - **CLI Tool** -- Rich terminal output with score bars, JSON, and Markdown reports
 - **REST API** -- FastAPI with Supabase persistence, Swagger UI at `/docs`
+- **Web Dashboard** -- React + Vite + Tailwind frontend with upload, results, history, and PDF export
 
 ## Architecture
 
@@ -34,6 +35,7 @@ graph LR
     H --> J[JSON Output]
     H --> K[Markdown Report]
     H --> L[REST API]
+    L --> M[Web Dashboard]
 ```
 
 ## Scoring System
@@ -52,7 +54,7 @@ Weights are configurable via `--weights` flag or `AnalysisWeights` in config. Mi
 ## Quick Start
 
 ```bash
-# Install
+# Install backend
 pip install -e ".[dev,api]"
 
 # Download NIMA model weights
@@ -60,6 +62,9 @@ python scripts/download_models.py
 
 # Analyze a photo
 visionscore analyze photo.jpg
+
+# Start the frontend
+cd frontend && npm install && npm run dev
 ```
 
 ## CLI Usage
@@ -140,6 +145,7 @@ src/visionscore/
   scoring/         # Score aggregation, grading
   output/          # JSON, CLI, markdown reports
   api/             # FastAPI + Supabase client
+frontend/          # React + Vite + Tailwind dashboard
 tests/             # 155 tests (pytest)
 scripts/           # Model download
 sql/               # Supabase schema
@@ -153,6 +159,7 @@ docs/              # API reference, scoring methodology
 - **CLI:** Typer, Rich
 - **API:** FastAPI, Supabase
 - **Data:** Pydantic, pydantic-settings
+- **Frontend:** React, Vite, Tailwind CSS, shadcn/ui, jsPDF
 - **Quality:** pytest, ruff, mypy
 
 ## Development
