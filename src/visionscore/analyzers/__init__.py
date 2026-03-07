@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from visionscore.analyzers.aesthetic import AestheticAnalyzer
 from visionscore.analyzers.ai_feedback import AIFeedbackAnalyzer
 from visionscore.analyzers.base import BaseAnalyzer

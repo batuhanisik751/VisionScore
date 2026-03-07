@@ -73,6 +73,9 @@ cd frontend && npm install && npm run dev
 # Full analysis with rich terminal output
 visionscore analyze photo.jpg
 
+# Analyze from URL
+visionscore analyze https://example.com/photo.jpg
+
 # JSON output
 visionscore analyze photo.jpg --output json
 
@@ -146,7 +149,7 @@ src/visionscore/
   output/          # JSON, CLI, markdown reports
   api/             # FastAPI + Supabase client
 frontend/          # React + Vite + Tailwind dashboard
-tests/             # 155 tests (pytest)
+tests/             # 163 tests (pytest)
 scripts/           # Model download
 sql/               # Supabase schema
 docs/              # API reference, scoring methodology
