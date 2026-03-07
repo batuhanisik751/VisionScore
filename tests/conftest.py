@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 
 @pytest.fixture(scope="session")
@@ -93,8 +94,6 @@ def wide_image_path(image_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def noisy_image_path(image_dir: Path) -> Path:
     """200x200 mid-gray image with heavy Gaussian noise."""
-    import numpy as np
-
     rng = np.random.default_rng(42)
     base = np.full((200, 200, 3), 128, dtype=np.uint8)
     noise = rng.normal(0, 40, base.shape).astype(np.int16)
@@ -111,4 +110,71 @@ def flat_gray_image_path(image_dir: Path) -> Path:
     img = Image.new("RGB", (200, 200), (128, 128, 128))
     path = image_dir / "flat_gray.jpg"
     img.save(path, "JPEG")
+    return path
+
+
+# ---- Composition test fixtures ----
+
+
+@pytest.fixture(scope="session")
+def subject_at_power_point_path(image_dir: Path) -> Path:
+    """300x300 dark image with bright circle at top-left power point (1/3, 1/3)."""
+    img = Image.new("RGB", (300, 300), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([70, 70, 130, 130], fill=(255, 255, 255))
+    path = image_dir / "power_point_subject.jpg"
+    img.save(path, "JPEG", quality=95)
+    return path
+
+
+@pytest.fixture(scope="session")
+def subject_centered_path(image_dir: Path) -> Path:
+    """300x300 dark image with bright circle at dead center."""
+    img = Image.new("RGB", (300, 300), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([120, 120, 180, 180], fill=(255, 255, 255))
+    path = image_dir / "centered_subject.jpg"
+    img.save(path, "JPEG", quality=95)
+    return path
+
+
+@pytest.fixture(scope="session")
+def tilted_horizon_path(image_dir: Path) -> Path:
+    """400x300 sky/ground image with ~5 degree tilt."""
+    import cv2
+
+    arr = np.zeros((300, 400, 3), dtype=np.uint8)
+    arr[:150, :] = (230, 200, 180)  # sky (BGR)
+    arr[150:, :] = (60, 120, 80)  # ground
+    center = (200, 150)
+    m = cv2.getRotationMatrix2D(center, 5, 1.0)
+    rotated = cv2.warpAffine(arr, m, (400, 300))
+    img = Image.fromarray(cv2.cvtColor(rotated, cv2.COLOR_BGR2RGB))
+    path = image_dir / "tilted_horizon.jpg"
+    img.save(path, "JPEG", quality=95)
+    return path
+
+
+@pytest.fixture(scope="session")
+def balanced_image_path(image_dir: Path) -> Path:
+    """300x300 symmetric left-right gradient."""
+    arr = np.zeros((300, 300, 3), dtype=np.uint8)
+    for x in range(150):
+        v = int(255 * x / 149)
+        arr[:, x] = (v, v, v)
+        arr[:, 299 - x] = (v, v, v)
+    img = Image.fromarray(arr)
+    path = image_dir / "balanced.jpg"
+    img.save(path, "JPEG", quality=95)
+    return path
+
+
+@pytest.fixture(scope="session")
+def unbalanced_image_path(image_dir: Path) -> Path:
+    """300x300 with bright left third, dark rest."""
+    arr = np.full((300, 300, 3), 30, dtype=np.uint8)
+    arr[:, :100] = (220, 220, 220)
+    img = Image.fromarray(arr)
+    path = image_dir / "unbalanced.jpg"
+    img.save(path, "JPEG", quality=95)
     return path

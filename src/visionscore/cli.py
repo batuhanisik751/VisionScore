@@ -94,12 +94,36 @@ def analyze(
         if verbose:
             console.print(f"[dim]Aesthetic scoring error: {e}[/dim]")
 
+    # Composition analysis
+    from visionscore.analyzers.composition import CompositionAnalyzer
+
+    comp_analyzer = CompositionAnalyzer()
+    composition = comp_analyzer.analyze(image, metadata=meta)
+
+    # AI Feedback (graceful degradation if Ollama not running)
+    ai_feedback = None
+    try:
+        from visionscore.analyzers.ai_feedback import AIFeedbackAnalyzer
+
+        ai_analyzer = AIFeedbackAnalyzer(
+            host=settings.ollama_host,
+            model=settings.ollama_model,
+        )
+        ai_feedback = ai_analyzer.analyze(image, metadata=meta)
+    except ConnectionError:
+        pass  # warning printed after tables
+    except Exception as e:
+        if verbose:
+            console.print(f"[dim]AI feedback error: {e}[/dim]")
+
     if output == "json":
         import json
 
-        data = {"technical": tech.model_dump()}
+        data = {"technical": tech.model_dump(), "composition": composition.model_dump()}
         if aesthetic:
             data["aesthetic"] = aesthetic.model_dump()
+        if ai_feedback:
+            data["ai_feedback"] = ai_feedback.model_dump()
         console.print(json.dumps(data, indent=2))
         return
 
@@ -161,4 +185,59 @@ def analyze(
         console.print(
             "[yellow]Aesthetic scoring skipped: NIMA weights not found. "
             "Run: python scripts/download_models.py[/yellow]"
+        )
+
+    comp_table = Table(title="Composition")
+    comp_table.add_column("Metric", style="cyan")
+    comp_table.add_column("Score", style="white", justify="right")
+    comp_table.add_column("Bar", style="white")
+
+    for field, label in [
+        ("rule_of_thirds", "Rule of Thirds"),
+        ("subject_position", "Subject Position"),
+        ("horizon", "Horizon"),
+        ("balance", "Balance"),
+    ]:
+        score = getattr(composition, field)
+        color = "green" if score >= 70 else "yellow" if score >= 40 else "red"
+        comp_table.add_row(label, f"[{color}]{score:.1f}[/{color}]", _score_bar(score))
+
+    comp_table.add_section()
+    cc = (
+        "green" if composition.overall >= 70
+        else "yellow" if composition.overall >= 40
+        else "red"
+    )
+    comp_table.add_row(
+        "[bold]Overall[/bold]",
+        f"[bold {cc}]{composition.overall:.1f}[/bold {cc}]",
+        _score_bar(composition.overall),
+    )
+    console.print(comp_table)
+
+    if ai_feedback:
+        ai_table = Table(title="AI Feedback")
+        ai_table.add_column("Field", style="cyan")
+        ai_table.add_column("Value", style="white")
+
+        ai_table.add_row("Genre", ai_feedback.genre)
+        ai_table.add_row("Description", ai_feedback.description)
+        ai_table.add_row("Mood", ai_feedback.mood)
+
+        sc = "green" if ai_feedback.score >= 70 else "yellow" if ai_feedback.score >= 40 else "red"
+        ai_table.add_row("Score", f"[{sc}]{ai_feedback.score:.1f}[/{sc}]  {_score_bar(ai_feedback.score)}")
+
+        ai_table.add_section()
+        for s in ai_feedback.strengths:
+            ai_table.add_row("[green]+[/green] Strength", s)
+        for imp in ai_feedback.improvements:
+            ai_table.add_row("[yellow]>[/yellow] Improve", imp)
+
+        ai_table.add_section()
+        ai_table.add_row("Reasoning", ai_feedback.reasoning)
+        console.print(ai_table)
+    else:
+        console.print(
+            "[yellow]AI feedback skipped: Ollama not available. "
+            "Run: ollama serve && ollama pull llava[/yellow]"
         )

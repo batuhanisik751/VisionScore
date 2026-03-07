@@ -4,21 +4,22 @@ AI-powered photo evaluation tool that analyzes images and produces meaningful sc
 
 ## Project Status
 
-Phase 3 complete -- technical quality and aesthetic scoring are functional.
+Phase 5 complete -- technical quality, aesthetic scoring, composition analysis, and AI feedback are functional.
 
 ## What's Implemented
 
 - **Technical Quality Analysis** - Sharpness (Laplacian + Sobel), exposure (LAB histogram), noise (Immerkaer), dynamic range (percentile)
 - **Aesthetic Scoring (NIMA)** - MobileNetV2 trained on AVA dataset, score distribution analysis (mean, std dev, confidence), auto GPU/MPS/CPU detection
+- **Composition Analysis** - Spectral residual saliency, rule of thirds, subject position, horizon detection, visual balance
 - **CLI Tool** - `visionscore analyze photo.jpg` with colored score bars, `visionscore info` for metadata
 - **Image Pipeline** - Loading, validation, resizing, EXIF metadata extraction
 - **Model Download Script** - `python scripts/download_models.py` to fetch NIMA weights
+- **AI Feedback** - Ollama + LLaVA vision LLM for natural language critique, genre classification, strengths/improvements, mood analysis. Graceful skip when Ollama unavailable.
 - **Multiple Output Formats** - Rich terminal output, JSON (`--output json`)
 
 ## Planned Features
 
-- Composition analysis (rule of thirds, saliency, horizon, balance)
-- AI feedback via Ollama + LLaVA (local, no API keys)
+- Score aggregation, grading system, and polished report generation
 - REST API with Supabase (DB + Auth + Storage)
 
 ## Tech Stack
