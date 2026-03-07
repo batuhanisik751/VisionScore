@@ -4,23 +4,25 @@ AI-powered photo evaluation tool that analyzes images and produces meaningful sc
 
 ## Project Status
 
-Phase 5 complete -- technical quality, aesthetic scoring, composition analysis, and AI feedback are functional.
+Phase 6 complete -- full analysis pipeline with scoring, grading, and report generation.
 
 ## What's Implemented
 
 - **Technical Quality Analysis** - Sharpness (Laplacian + Sobel), exposure (LAB histogram), noise (Immerkaer), dynamic range (percentile)
 - **Aesthetic Scoring (NIMA)** - MobileNetV2 trained on AVA dataset, score distribution analysis (mean, std dev, confidence), auto GPU/MPS/CPU detection
 - **Composition Analysis** - Spectral residual saliency, rule of thirds, subject position, horizon detection, visual balance
-- **CLI Tool** - `visionscore analyze photo.jpg` with colored score bars, `visionscore info` for metadata
+- **AI Feedback** - Ollama + LLaVA vision LLM for natural language critique, genre classification, strengths/improvements, mood analysis. Graceful skip when Ollama unavailable.
+- **Score Aggregation** - Weighted scoring across all analyzers with automatic weight redistribution for missing components. Grade system: S/A/B/C/D/F.
+- **Pipeline Orchestrator** - Coordinates image loading, metadata extraction, analysis, scoring, and grading in one call.
+- **CLI Tool** - `visionscore analyze photo.jpg` with overall score panel, category bars, detailed breakdowns. Flags: `--skip-ai`, `--weights`, `--save`, `--output`
+- **Multiple Output Formats** - Rich terminal, JSON (`--output json`), Markdown (`--output markdown`), save to file (`--save report.json`)
 - **Image Pipeline** - Loading, validation, resizing, EXIF metadata extraction
 - **Model Download Script** - `python scripts/download_models.py` to fetch NIMA weights
-- **AI Feedback** - Ollama + LLaVA vision LLM for natural language critique, genre classification, strengths/improvements, mood analysis. Graceful skip when Ollama unavailable.
-- **Multiple Output Formats** - Rich terminal output, JSON (`--output json`)
 
 ## Planned Features
 
-- Score aggregation, grading system, and polished report generation
 - REST API with Supabase (DB + Auth + Storage)
+- Batch analysis, web dashboard, image comparison
 
 ## Tech Stack
 
@@ -56,6 +58,15 @@ python scripts/download_models.py
 
 # Analyze a photo
 visionscore analyze photo.jpg
+
+# JSON output
+visionscore analyze photo.jpg --output json
+
+# Save markdown report
+visionscore analyze photo.jpg --save report.md
+
+# Skip AI feedback, custom weights
+visionscore analyze photo.jpg --skip-ai --weights 30:30:30:10
 
 # View image metadata
 visionscore info photo.jpg
