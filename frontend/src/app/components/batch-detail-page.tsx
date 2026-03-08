@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
   Download,
+  FileText,
   Trash2,
   Trophy,
   AlertCircle,
@@ -11,6 +12,7 @@ import {
   ArrowUp,
   FolderOpen,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import { ScoreBadge } from "./score-badge";
 import { getGradeColor, getGradeBg, getScoreBarClass, type AnalysisReport } from "./mock-data";
 
@@ -37,6 +39,7 @@ export function BatchDetailPage() {
 
   const [sortField, setSortField] = useState<"score" | "name">("score");
   const [sortAsc, setSortAsc] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!batchId) return;
@@ -115,6 +118,165 @@ export function BatchDetailPage() {
     a.download = `visionscore-batch-${batchId?.slice(0, 8)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const loadImageAsDataUrl = (src: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")!.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  };
+
+  const exportPDF = async () => {
+    setExporting(true);
+    try {
+      const doc = new jsPDF();
+      const margin = 20;
+
+      const addLine = (y: number, text: string, size = 10, style: "normal" | "bold" = "normal"): number => {
+        doc.setFontSize(size);
+        doc.setFont("helvetica", style);
+        const lines = doc.splitTextToSize(text, 170);
+        if (y + lines.length * size * 0.4 > 280) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(lines, margin, y);
+        return y + lines.length * size * 0.45 + 2;
+      };
+
+      const addScoreRow = (y: number, label: string, value: number): number => {
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        if (y > 275) { doc.addPage(); y = margin; }
+        doc.text(label, margin + 4, y);
+        doc.text(`${value.toFixed(1)}`, 170, y, { align: "right" });
+        const barWidth = 60;
+        const barX = 100;
+        doc.setFillColor(230, 230, 230);
+        doc.roundedRect(barX, y - 3.5, barWidth, 4, 1, 1, "F");
+        const fill = (value / 100) * barWidth;
+        const [r, g, b] = value >= 80 ? [52, 211, 153] : value >= 60 ? [96, 165, 250] : value >= 40 ? [251, 191, 36] : [248, 113, 113];
+        doc.setFillColor(r, g, b);
+        doc.roundedRect(barX, y - 3.5, fill, 4, 1, 1, "F");
+        return y + 7;
+      };
+
+      // --- Summary page ---
+      let y = margin;
+      y = addLine(y, "VisionScore Batch Report", 20, "bold");
+      y = addLine(y, `Batch ID: ${batchId?.slice(0, 8)}`, 10);
+      y = addLine(y, `${successful.length} images analyzed  |  Average: ${avgScore.toFixed(1)}  |  Best: ${bestRow?.grade || "—"}`, 10);
+      y += 6;
+
+      // Grade distribution table
+      y = addLine(y, "Grade Distribution", 12, "bold");
+      GRADES.forEach((g) => {
+        const count = gradeDistribution[g] || 0;
+        if (count > 0) y = addLine(y, `  ${g}: ${count} image${count > 1 ? "s" : ""}`);
+      });
+      y += 4;
+
+      // Ranking table
+      y = addLine(y, "Ranking", 12, "bold");
+      y += 2;
+      const ranked = [...successful].sort((a, b) => b.overall_score - a.overall_score);
+      ranked.forEach((row, i) => {
+        const name = row.full_report.image_meta.path.split("/").pop() || row.full_report.image_meta.path;
+        y = addLine(y, `${i + 1}. ${name}  —  ${row.overall_score.toFixed(1)} (${row.grade})`);
+      });
+
+      // --- One page per report ---
+      for (const row of ranked) {
+        doc.addPage();
+        y = margin;
+        const rp = row.full_report;
+
+        y = addLine(y, "VisionScore Analysis Report", 20, "bold");
+
+        // Embed photo
+        if (row.image_url) {
+          const dataUrl = await loadImageAsDataUrl(row.image_url);
+          if (dataUrl) {
+            const pageWidth = 170;
+            const aspect = rp.image_meta.height / rp.image_meta.width;
+            const imgHeight = Math.min(pageWidth * aspect, 100);
+            doc.addImage(dataUrl, "JPEG", margin, y, pageWidth, imgHeight);
+            y += imgHeight + 4;
+          }
+        }
+
+        y = addLine(y, `${rp.image_meta.width} × ${rp.image_meta.height} | ${rp.image_meta.format}`, 9);
+        y += 4;
+        y = addLine(y, `Overall Score: ${row.overall_score.toFixed(1)} / 100  —  Grade ${row.grade}`, 14, "bold");
+        y += 4;
+
+        if (rp.technical) {
+          y = addLine(y, "Technical Quality (25%)", 12, "bold");
+          y = addScoreRow(y, "Sharpness", rp.technical.sharpness);
+          y = addScoreRow(y, "Exposure", rp.technical.exposure);
+          y = addScoreRow(y, "Noise", rp.technical.noise);
+          y = addScoreRow(y, "Dynamic Range", rp.technical.dynamic_range);
+          y = addScoreRow(y, "Overall", rp.technical.overall);
+          y += 3;
+        }
+
+        if (rp.aesthetic) {
+          y = addLine(y, "Aesthetic Quality (30%)", 12, "bold");
+          y = addScoreRow(y, "NIMA Score", rp.aesthetic.nima_score);
+          y = addScoreRow(y, "Confidence", rp.aesthetic.confidence * 100);
+          y = addScoreRow(y, "Overall", rp.aesthetic.overall);
+          y += 3;
+        }
+
+        if (rp.composition) {
+          y = addLine(y, "Composition (25%)", 12, "bold");
+          y = addScoreRow(y, "Rule of Thirds", rp.composition.rule_of_thirds);
+          y = addScoreRow(y, "Subject Position", rp.composition.subject_position);
+          y = addScoreRow(y, "Horizon", rp.composition.horizon);
+          y = addScoreRow(y, "Balance", rp.composition.balance);
+          y = addScoreRow(y, "Overall", rp.composition.overall);
+          y += 3;
+        }
+
+        if (rp.ai_feedback) {
+          y = addLine(y, "AI Feedback (20%)", 12, "bold");
+          y = addScoreRow(y, "AI Score", rp.ai_feedback.score);
+          y += 2;
+          y = addLine(y, `Genre: ${rp.ai_feedback.genre}  |  Mood: ${rp.ai_feedback.mood}`, 10);
+          y = addLine(y, rp.ai_feedback.description, 10);
+          y += 2;
+          y = addLine(y, "Strengths:", 10, "bold");
+          rp.ai_feedback.strengths.forEach((s) => { y = addLine(y, `  + ${s}`); });
+          y += 1;
+          y = addLine(y, "Improvements:", 10, "bold");
+          rp.ai_feedback.improvements.forEach((s) => { y = addLine(y, `  ~ ${s}`); });
+          y += 2;
+          y = addLine(y, rp.ai_feedback.reasoning, 9);
+        }
+
+        const exif = rp.image_meta?.exif;
+        if (exif) {
+          y += 4;
+          y = addLine(y, "Image Metadata", 12, "bold");
+          if (exif.camera) y = addLine(y, `Camera: ${exif.camera}  |  ISO: ${exif.iso}  |  Aperture: ${exif.aperture}`);
+          if (exif.shutter_speed) y = addLine(y, `Shutter: ${exif.shutter_speed}  |  Focal Length: ${exif.focal_length}${exif.lens ? `  |  Lens: ${exif.lens}` : ""}`);
+        }
+      }
+
+      doc.save(`visionscore-batch-${batchId?.slice(0, 8)}.pdf`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const sortedReports = [...successful].sort((a, b) => {
@@ -215,6 +377,14 @@ export function BatchDetailPage() {
               className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 rounded-lg transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" /> Delete Batch
+            </button>
+            <button
+              onClick={exportPDF}
+              disabled={exporting}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-300 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] rounded-lg transition-all"
+            >
+              {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+              {exporting ? "Exporting..." : "Export PDF"}
             </button>
             <button
               onClick={exportCSV}
