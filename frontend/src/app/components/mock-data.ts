@@ -34,6 +34,10 @@ export interface AnalysisReport {
     horizon: number;
     balance: number;
     overall: number;
+    subject_centroid?: [number, number];
+    subject_bbox?: [number, number, number, number];
+    horizon_angle?: number | null;
+    image_dimensions?: [number, number];
   } | null;
   ai_feedback: {
     description: string;

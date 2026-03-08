@@ -4,6 +4,7 @@ import { UploadPage } from "./components/upload-page";
 import { AnalysisResultsPage, SavedReportPage, BatchReportPage } from "./components/results-wrapper";
 import { HistoryPage } from "./components/history-page";
 import { BatchPage } from "./components/batch-page";
+import { ComparePage } from "./components/compare-page";
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: UploadPage },
       { path: "batch", Component: BatchPage },
+      { path: "compare", Component: ComparePage },
       { path: "results/:id", Component: AnalysisResultsPage },
       { path: "report/:id", Component: SavedReportPage },
       { path: "batch-report/:batchId", Component: BatchReportPage },

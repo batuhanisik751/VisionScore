@@ -18,6 +18,8 @@ import {
 import { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
 import { Loader2, Check } from "lucide-react";
+import { ScoreRadarChart } from "./score-radar-chart";
+import { ImageOverlay } from "./image-overlay";
 
 interface ResultsPageProps {
   saved?: boolean;
@@ -283,10 +285,10 @@ export function ResultsPage({ saved }: ResultsPageProps) {
       {/* Hero section with image and overall score */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-white/[0.06] bg-white/[0.02]">
-          <img
+          <ImageOverlay
             src={report.image_url}
             alt={report.image_meta.path}
-            className="w-full max-h-[420px] object-cover"
+            composition={report.composition}
           />
         </div>
         <div className="flex flex-col items-center justify-center bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8">
@@ -350,6 +352,17 @@ export function ResultsPage({ saved }: ResultsPageProps) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Score Profile Radar Chart */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-6 mb-6">
+        <h3 className="text-white text-sm mb-2">Score Profile</h3>
+        <ScoreRadarChart
+          technical={report.technical?.overall ?? null}
+          aesthetic={report.aesthetic?.overall ?? null}
+          composition={report.composition?.overall ?? null}
+          aiFeedback={report.ai_feedback?.score ?? null}
+        />
       </div>
 
       {/* Category Cards */}

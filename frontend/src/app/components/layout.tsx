@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { Eye, Upload, BarChart3, FolderOpen } from "lucide-react";
+import { Eye, Upload, BarChart3, FolderOpen, Columns2 } from "lucide-react";
 
 export function Layout() {
   const navigate = useNavigate();
@@ -8,11 +8,12 @@ export function Layout() {
   const navItems = [
     { path: "/", label: "Upload", icon: Upload },
     { path: "/batch", label: "Batch", icon: FolderOpen },
+    { path: "/compare", label: "Compare", icon: Columns2 },
     { path: "/history", label: "Reports", icon: BarChart3 },
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-gray-200" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="dark min-h-screen bg-[#0a0a0f] text-gray-200" style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Background gradient */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-b from-blue-500/[0.04] via-purple-500/[0.02] to-transparent rounded-full blur-3xl" />

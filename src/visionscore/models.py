@@ -36,6 +36,11 @@ class CompositionScore(BaseModel):
     horizon: float = Field(ge=0, le=100)
     balance: float = Field(ge=0, le=100)
     overall: float = Field(ge=0, le=100)
+    # Overlay data (optional, for frontend visualization)
+    subject_centroid: tuple[float, float] | None = None
+    subject_bbox: tuple[int, int, int, int] | None = None
+    horizon_angle: float | None = None
+    image_dimensions: tuple[int, int] | None = None
 
 
 class AIFeedback(BaseModel):

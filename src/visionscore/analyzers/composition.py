@@ -31,26 +31,32 @@ class CompositionAnalyzer(BaseAnalyzer):
 
     def analyze(self, image: LoadedImage, metadata: ImageMeta | None = None) -> CompositionScore:
         gray = cv2.cvtColor(image.resized, cv2.COLOR_BGR2GRAY)
-        centroid, _bbox, saliency_map = self._detect_saliency(gray)
+        centroid, bbox, saliency_map = self._detect_saliency(gray)
 
         rule_of_thirds = self._analyze_rule_of_thirds(centroid)
         subject_position = self._analyze_subject_position(centroid, saliency_map)
-        horizon = self._analyze_horizon(gray)
+        horizon_score, horizon_angle = self._analyze_horizon(gray)
         balance = self._analyze_balance(image.resized)
 
         overall = (
             rule_of_thirds * self.RULE_OF_THIRDS_WEIGHT
             + subject_position * self.SUBJECT_POSITION_WEIGHT
-            + horizon * self.HORIZON_WEIGHT
+            + horizon_score * self.HORIZON_WEIGHT
             + balance * self.BALANCE_WEIGHT
         )
+
+        h, w = gray.shape
 
         return CompositionScore(
             rule_of_thirds=round(rule_of_thirds, 1),
             subject_position=round(subject_position, 1),
-            horizon=round(horizon, 1),
+            horizon=round(horizon_score, 1),
             balance=round(balance, 1),
             overall=round(overall, 1),
+            subject_centroid=centroid,
+            subject_bbox=bbox,
+            horizon_angle=horizon_angle,
+            image_dimensions=(w, h),
         )
 
     # ------------------------------------------------------------------
@@ -153,8 +159,12 @@ class CompositionAnalyzer(BaseAnalyzer):
     # Horizon detection
     # ------------------------------------------------------------------
 
-    def _analyze_horizon(self, gray: np.ndarray) -> float:
-        """Detect horizon line and score its levelness."""
+    def _analyze_horizon(self, gray: np.ndarray) -> tuple[float, float | None]:
+        """Detect horizon line and score its levelness.
+
+        Returns:
+            (score, angle_degrees) where angle is None if no horizon detected.
+        """
         h, w = gray.shape
         median_val = float(np.median(gray))
         low = max(0, int(0.66 * median_val))
@@ -167,7 +177,7 @@ class CompositionAnalyzer(BaseAnalyzer):
         lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 80, minLineLength=min_length, maxLineGap=15)
 
         if lines is None:
-            return self._NEUTRAL_HORIZON_SCORE
+            return self._NEUTRAL_HORIZON_SCORE, None
 
         best_angle: float | None = None
         best_length = 0
@@ -183,7 +193,7 @@ class CompositionAnalyzer(BaseAnalyzer):
                 best_angle = angle
 
         if best_angle is None:
-            return self._NEUTRAL_HORIZON_SCORE
+            return self._NEUTRAL_HORIZON_SCORE, None
 
         abs_angle = abs(best_angle)
         if abs_angle <= 3.0:
@@ -191,7 +201,7 @@ class CompositionAnalyzer(BaseAnalyzer):
         else:
             penalty = 30.0 + (abs_angle - 3.0) * 5.0
 
-        return max(0.0, min(100.0, 100.0 - penalty))
+        return max(0.0, min(100.0, 100.0 - penalty)), round(best_angle, 2)
 
     # ------------------------------------------------------------------
     # Visual balance

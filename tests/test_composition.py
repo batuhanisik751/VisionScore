@@ -149,3 +149,27 @@ class TestOverallComposition:
         for field in ["rule_of_thirds", "subject_position", "horizon", "balance", "overall"]:
             score = getattr(result, field)
             assert 0 <= score <= 100, f"{field} out of range: {score}"
+
+    def test_overlay_data_populated(
+        self, analyzer: CompositionAnalyzer, normal_image_path: Path
+    ):
+        result = analyzer.analyze(load_image(normal_image_path))
+        assert result.subject_centroid is not None
+        assert len(result.subject_centroid) == 2
+        assert 0 <= result.subject_centroid[0] <= 1
+        assert 0 <= result.subject_centroid[1] <= 1
+        assert result.subject_bbox is not None
+        assert len(result.subject_bbox) == 4
+        assert result.image_dimensions is not None
+        w, h = result.image_dimensions
+        assert w > 0 and h > 0
+
+    def test_overlay_backward_compat(self):
+        """Old reports without overlay fields still deserialize."""
+        score = CompositionScore(
+            rule_of_thirds=80, subject_position=75, horizon=90, balance=70, overall=80
+        )
+        assert score.subject_centroid is None
+        assert score.subject_bbox is None
+        assert score.horizon_angle is None
+        assert score.image_dimensions is None

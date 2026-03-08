@@ -13,7 +13,10 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import { BarChart, Bar, XAxis, YAxis, Cell } from "recharts";
 import { ScoreBadge } from "./score-badge";
+import { ScoreRadarChart } from "./score-radar-chart";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "./ui/chart";
 import { getGradeColor, getGradeBg, getScoreBarClass, type AnalysisReport } from "./mock-data";
 
 interface DbRow {
@@ -26,6 +29,22 @@ interface DbRow {
 }
 
 const GRADES = ["S", "A", "B", "C", "D", "F"];
+
+const gradeChartConfig: ChartConfig = {
+  count: { label: "Count", color: "#60a5fa" },
+};
+
+function gradeBarColor(grade: string): string {
+  switch (grade) {
+    case "S": return "#fbbf24";
+    case "A": return "#34d399";
+    case "B": return "#60a5fa";
+    case "C": return "#facc15";
+    case "D": return "#fb923c";
+    case "F": return "#f87171";
+    default: return "#6b7280";
+  }
+}
 
 export function BatchDetailPage() {
   const { batchId } = useParams();
@@ -83,6 +102,17 @@ export function BatchDetailPage() {
   successful.forEach((r) => {
     gradeDistribution[r.grade] = (gradeDistribution[r.grade] || 0) + 1;
   });
+
+  const avgCategory = (key: "technical" | "aesthetic" | "composition" | "ai_feedback") => {
+    const vals = successful
+      .map((r) => {
+        const cat = r.full_report[key];
+        if (!cat) return null;
+        return key === "ai_feedback" ? (cat as { score: number }).score : (cat as { overall: number }).overall;
+      })
+      .filter((v): v is number => v != null);
+    return vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  };
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -327,8 +357,8 @@ export function BatchDetailPage() {
           ))}
         </div>
 
-        {/* Best & Worst + Grade Distribution */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Best & Worst */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {bestRow && (
             <div className="bg-white/[0.03] border border-emerald-500/20 rounded-xl p-4 flex items-center gap-4">
               <Trophy className="w-8 h-8 text-emerald-400 shrink-0" />
@@ -349,22 +379,33 @@ export function BatchDetailPage() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Charts: Grade Distribution + Avg Scores Radar */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
             <p className="text-xs text-gray-500 mb-3">Grade Distribution</p>
-            <div className="flex items-end justify-between gap-1 h-16">
-              {GRADES.map((g) => {
-                const count = gradeDistribution[g] || 0;
-                const max = Math.max(...Object.values(gradeDistribution), 1);
-                const height = count > 0 ? Math.max((count / max) * 100, 15) : 0;
-                return (
-                  <div key={g} className="flex flex-col items-center gap-1 flex-1">
-                    <span className="text-xs text-gray-400 tabular-nums">{count || ""}</span>
-                    <div className={`w-full rounded-t ${getGradeBg(g).split(" ")[0]} transition-all`} style={{ height: `${height}%` }} />
-                    <span className={`text-xs font-mono ${getGradeColor(g)}`}>{g}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <ChartContainer config={gradeChartConfig} className="h-[160px] w-full aspect-auto">
+              <BarChart data={GRADES.map((g) => ({ grade: g, count: gradeDistribution[g] || 0 }))} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+                <XAxis dataKey="grade" tick={{ fill: "#9ca3af", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} animationDuration={800}>
+                  {GRADES.map((g) => (
+                    <Cell key={g} fill={gradeBarColor(g)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </div>
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">Average Score Profile</p>
+            <ScoreRadarChart
+              technical={avgCategory("technical")}
+              aesthetic={avgCategory("aesthetic")}
+              composition={avgCategory("composition")}
+              aiFeedback={avgCategory("ai_feedback")}
+            />
           </div>
         </div>
 
