@@ -65,6 +65,9 @@ class AestheticAnalyzer(BaseAnalyzer):
 
         model = NIMAModel()
         state_dict = torch.load(self._model_path, map_location=self._device, weights_only=True)
+        # Handle weights saved without the base_model. prefix wrapper
+        if any(k.startswith("features.") or k.startswith("classifier.") for k in state_dict):
+            state_dict = {f"base_model.{k}": v for k, v in state_dict.items()}
         model.load_state_dict(state_dict)
         model.to(self._device)
         model.eval()
