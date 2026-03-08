@@ -38,7 +38,12 @@ class AnalysisOrchestrator:
         try:
             from visionscore.analyzers.aesthetic import AestheticAnalyzer
 
-            model_path = self._settings.model_dir / "nima_mobilenetv2.pth"
+            if self._settings.custom_model_path and self._settings.custom_model_path.is_file():
+                model_path = self._settings.custom_model_path
+            else:
+                finetuned = self._settings.model_dir / "nima_finetuned.pth"
+                base = self._settings.model_dir / "nima_mobilenetv2.pth"
+                model_path = finetuned if finetuned.is_file() else base
             aes_analyzer = AestheticAnalyzer(model_path=model_path, device=self._settings.device)
             aesthetic = aes_analyzer.analyze(image, metadata=meta)
         except FileNotFoundError:

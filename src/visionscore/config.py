@@ -39,5 +39,6 @@ class Settings(BaseSettings):
     device: str = "auto"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    custom_model_path: Path | None = None
     analysis_weights: AnalysisWeights = AnalysisWeights()
     thresholds: Thresholds = Thresholds()

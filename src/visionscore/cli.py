@@ -246,3 +246,70 @@ def compare(
         file_content = format_comparison_json(comparison)
         save.write_text(file_content)
         console.print(f"[green]Comparison report saved to {save}[/green]")
+
+
+@app.command()
+def train(
+    image_dir: Path = typer.Argument(..., help="Directory containing training images"),
+    csv_path: Path = typer.Argument(..., help="CSV file with filename,score ratings"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output path for fine-tuned weights"
+    ),
+    base_weights: Optional[Path] = typer.Option(
+        None, "--base-weights", help="Base NIMA weights to start from"
+    ),
+    epochs: int = typer.Option(20, "--epochs", "-e", help="Number of training epochs"),
+    batch_size: int = typer.Option(16, "--batch-size", "-b", help="Training batch size"),
+    lr: float = typer.Option(1e-4, "--lr", help="Learning rate"),
+    val_split: float = typer.Option(0.2, "--val-split", help="Validation split fraction"),
+    full: bool = typer.Option(False, "--full", help="Full fine-tuning (unfreeze backbone)"),
+    no_augment: bool = typer.Option(False, "--no-augment", help="Disable data augmentation"),
+    scale: str = typer.Option(
+        "ava", "--scale", help="Rating scale: ava (1-10) or visionscore (0-100)"
+    ),
+    seed: int = typer.Option(42, "--seed", help="Random seed for reproducibility"),
+):
+    """Fine-tune the NIMA aesthetic model on your own rated image dataset."""
+    from visionscore.config import Settings
+    from visionscore.training.trainer import NIMAAestheticTrainer, TrainingConfig
+
+    if not image_dir.is_dir():
+        console.print(f"[red]Error: '{image_dir}' is not a directory[/red]")
+        raise typer.Exit(1)
+
+    if not csv_path.is_file():
+        console.print(f"[red]Error: '{csv_path}' is not a valid file[/red]")
+        raise typer.Exit(1)
+
+    if scale not in ("ava", "visionscore"):
+        console.print("[red]Error: --scale must be 'ava' or 'visionscore'[/red]")
+        raise typer.Exit(1)
+
+    settings = Settings()
+
+    resolved_output = output or (settings.model_dir / "nima_finetuned.pth")
+    resolved_base = base_weights or (settings.model_dir / "nima_mobilenetv2.pth")
+
+    config = TrainingConfig(
+        image_dir=image_dir,
+        csv_path=csv_path,
+        output_path=resolved_output,
+        base_weights=resolved_base if resolved_base.is_file() else None,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=lr,
+        val_split=val_split,
+        full_finetune=full,
+        augment=not no_augment,
+        scale=scale,
+        device=settings.device,
+        seed=seed,
+    )
+
+    trainer = NIMAAestheticTrainer(config, console=console)
+
+    try:
+        trainer.train()
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)

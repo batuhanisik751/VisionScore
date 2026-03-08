@@ -123,3 +123,29 @@ class TestCompareCommand:
         assert out_file.exists()
         content = out_file.read_text()
         assert "overall_diff" in content
+
+
+class TestTrainCommand:
+    def test_train_missing_dir(self, tmp_path: Path) -> None:
+        fake_dir = tmp_path / "nonexistent"
+        csv_path = tmp_path / "ratings.csv"
+        csv_path.write_text("img.jpg,5\n")
+        result = runner.invoke(app, ["train", str(fake_dir), str(csv_path)])
+        assert result.exit_code == 1
+
+    def test_train_missing_csv(self, tmp_path: Path) -> None:
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        fake_csv = tmp_path / "nonexistent.csv"
+        result = runner.invoke(app, ["train", str(img_dir), str(fake_csv)])
+        assert result.exit_code == 1
+
+    def test_train_invalid_scale(self, tmp_path: Path) -> None:
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        csv_path = tmp_path / "ratings.csv"
+        csv_path.write_text("img.jpg,5\n")
+        result = runner.invoke(
+            app, ["train", str(img_dir), str(csv_path), "--scale", "invalid"]
+        )
+        assert result.exit_code == 1
