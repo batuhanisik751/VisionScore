@@ -26,12 +26,18 @@ create table analysis_reports (
     analysis_time_seconds float,
 
     -- Full serialized AnalysisReport for exact reconstruction
-    full_report jsonb not null
+    full_report jsonb not null,
+
+    -- Batch support
+    report_type text not null default 'single',
+    batch_id uuid
 );
 
 -- Indexes
 create index idx_reports_created_at on analysis_reports(created_at desc);
 create index idx_reports_grade on analysis_reports(grade);
+create index idx_reports_batch_id on analysis_reports(batch_id);
+create index idx_reports_report_type on analysis_reports(report_type);
 
 -- Storage bucket (run in Supabase dashboard or via API):
 -- insert into storage.buckets (id, name, public) values ('images', 'images', true);

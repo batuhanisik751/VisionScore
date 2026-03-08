@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { Eye, Upload, BarChart3 } from "lucide-react";
+import { Eye, Upload, BarChart3, FolderOpen } from "lucide-react";
 
 export function Layout() {
   const navigate = useNavigate();
@@ -7,6 +7,7 @@ export function Layout() {
 
   const navItems = [
     { path: "/", label: "Upload", icon: Upload },
+    { path: "/batch", label: "Batch", icon: FolderOpen },
     { path: "/history", label: "Reports", icon: BarChart3 },
   ];
 

@@ -1,0 +1,333 @@
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router";
+import {
+  ArrowLeft,
+  Download,
+  Trash2,
+  Trophy,
+  AlertCircle,
+  Loader2,
+  ArrowDown,
+  ArrowUp,
+  FolderOpen,
+} from "lucide-react";
+import { ScoreBadge } from "./score-badge";
+import { getGradeColor, getGradeBg, getScoreBarClass, type AnalysisReport } from "./mock-data";
+
+interface DbRow {
+  id: string;
+  created_at: string;
+  image_url: string | null;
+  overall_score: number;
+  grade: string;
+  full_report: AnalysisReport;
+}
+
+const GRADES = ["S", "A", "B", "C", "D", "F"];
+
+export function BatchDetailPage() {
+  const { batchId } = useParams();
+  const navigate = useNavigate();
+
+  const [reports, setReports] = useState<DbRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [sortField, setSortField] = useState<"score" | "name">("score");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  useEffect(() => {
+    if (!batchId) return;
+    setLoading(true);
+    fetch(`/api/v1/reports/batch/${batchId}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to load batch (${res.status})`);
+        const data = await res.json();
+        setReports(data.reports);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load batch"))
+      .finally(() => setLoading(false));
+  }, [batchId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-gray-500 animate-spin mb-4" />
+        <p className="text-sm text-gray-500">Loading batch...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
+  const successful = reports.filter((r) => r.full_report);
+  const scores = successful.map((r) => r.overall_score);
+  const avgScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
+  const bestRow = successful.length > 0 ? successful.reduce((a, b) => (a.overall_score >= b.overall_score ? a : b)) : null;
+  const worstRow = successful.length > 0 ? successful.reduce((a, b) => (a.overall_score < b.overall_score ? a : b)) : null;
+
+  const gradeDistribution: Record<string, number> = {};
+  successful.forEach((r) => {
+    gradeDistribution[r.grade] = (gradeDistribution[r.grade] || 0) + 1;
+  });
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await fetch(`/api/v1/reports/batch/${batchId}`, { method: "DELETE" });
+      navigate("/history");
+    } catch {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const exportCSV = () => {
+    const headers = [
+      "filename", "overall_score", "grade", "technical", "aesthetic",
+      "composition", "ai_feedback", "sharpness", "exposure", "noise", "dynamic_range",
+    ];
+    const rows = successful.map((r) => {
+      const rp = r.full_report;
+      return [
+        rp.image_meta.path, r.overall_score, r.grade,
+        rp.technical?.overall ?? "", rp.aesthetic?.overall ?? "",
+        rp.composition?.overall ?? "", rp.ai_feedback?.score ?? "",
+        rp.technical?.sharpness ?? "", rp.technical?.exposure ?? "",
+        rp.technical?.noise ?? "", rp.technical?.dynamic_range ?? "",
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `visionscore-batch-${batchId?.slice(0, 8)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sortedReports = [...successful].sort((a, b) => {
+    if (sortField === "name") {
+      return sortAsc
+        ? a.full_report.image_meta.path.localeCompare(b.full_report.image_meta.path)
+        : b.full_report.image_meta.path.localeCompare(a.full_report.image_meta.path);
+    }
+    return sortAsc ? a.overall_score - b.overall_score : b.overall_score - a.overall_score;
+  });
+
+  const toggleSort = (field: "score" | "name") => {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(field === "name"); }
+  };
+
+  const SortIcon = sortAsc ? ArrowUp : ArrowDown;
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-6">
+        <button
+          onClick={() => navigate("/history")}
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Reports
+        </button>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <FolderOpen className="w-3 h-3" />
+          Batch {batchId?.slice(0, 8)}
+        </div>
+      </div>
+
+      <div className="space-y-8">
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: "Images", value: reports.length, color: "text-white" },
+            { label: "Successful", value: successful.length, color: "text-emerald-400" },
+            { label: "Failed", value: reports.length - successful.length, color: reports.length - successful.length > 0 ? "text-red-400" : "text-gray-500" },
+            { label: "Avg Score", value: avgScore.toFixed(1), color: "text-blue-400" },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 text-center">
+              <p className="text-xs text-gray-500 mb-1">{stat.label}</p>
+              <p className={`text-2xl tabular-nums ${stat.color}`} style={{ fontWeight: 700 }}>{stat.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Best & Worst + Grade Distribution */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {bestRow && (
+            <div className="bg-white/[0.03] border border-emerald-500/20 rounded-xl p-4 flex items-center gap-4">
+              <Trophy className="w-8 h-8 text-emerald-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-emerald-400 mb-0.5">Best Image</p>
+                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>{bestRow.full_report.image_meta.path}</p>
+                <p className="text-emerald-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>{bestRow.overall_score.toFixed(1)}</p>
+              </div>
+            </div>
+          )}
+          {worstRow && (
+            <div className="bg-white/[0.03] border border-red-500/20 rounded-xl p-4 flex items-center gap-4">
+              <AlertCircle className="w-8 h-8 text-red-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-red-400 mb-0.5">Lowest Score</p>
+                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>{worstRow.full_report.image_meta.path}</p>
+                <p className="text-red-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>{worstRow.overall_score.toFixed(1)}</p>
+              </div>
+            </div>
+          )}
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-3">Grade Distribution</p>
+            <div className="flex items-end justify-between gap-1 h-16">
+              {GRADES.map((g) => {
+                const count = gradeDistribution[g] || 0;
+                const max = Math.max(...Object.values(gradeDistribution), 1);
+                const height = count > 0 ? Math.max((count / max) * 100, 15) : 0;
+                return (
+                  <div key={g} className="flex flex-col items-center gap-1 flex-1">
+                    <span className="text-xs text-gray-400 tabular-nums">{count || ""}</span>
+                    <div className={`w-full rounded-t ${getGradeBg(g).split(" ")[0]} transition-all`} style={{ height: `${height}%` }} />
+                    <span className={`text-xs font-mono ${getGradeColor(g)}`}>{g}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-500">{reports.length} images in batch</span>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 rounded-lg transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Batch
+            </button>
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-300 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] rounded-lg transition-all"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Ranking table */}
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-white/[0.06]">
+                <th className="text-left text-xs text-gray-500 px-4 py-3 w-12">#</th>
+                <th className="text-left text-xs text-gray-500 px-4 py-3">
+                  <button onClick={() => toggleSort("name")} className="flex items-center gap-1 hover:text-gray-300 transition-colors">
+                    Image {sortField === "name" && <SortIcon className="w-3 h-3" />}
+                  </button>
+                </th>
+                <th className="text-center text-xs text-gray-500 px-4 py-3">
+                  <button onClick={() => toggleSort("score")} className="flex items-center gap-1 hover:text-gray-300 transition-colors mx-auto">
+                    Score {sortField === "score" && <SortIcon className="w-3 h-3" />}
+                  </button>
+                </th>
+                <th className="text-center text-xs text-gray-500 px-4 py-3">Grade</th>
+                <th className="text-left text-xs text-gray-500 px-4 py-3 hidden sm:table-cell">Bar</th>
+                <th className="text-right text-xs text-gray-500 px-4 py-3 hidden md:table-cell">Technical</th>
+                <th className="text-right text-xs text-gray-500 px-4 py-3 hidden md:table-cell">Aesthetic</th>
+                <th className="text-right text-xs text-gray-500 px-4 py-3 hidden lg:table-cell">Composition</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedReports.map((row, i) => {
+                const rp = row.full_report;
+                const isBest = bestRow && row.id === bestRow.id;
+                const isWorst = worstRow && row.id === worstRow.id;
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={() => navigate(`/report/${row.id}`, { state: { batchId } })}
+                    className={`border-b border-white/[0.03] transition-colors hover:bg-white/[0.02] cursor-pointer ${
+                      isBest ? "bg-emerald-500/[0.03]" : isWorst ? "bg-red-500/[0.03]" : ""
+                    }`}
+                  >
+                    <td className="px-4 py-3 text-sm text-gray-500 tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {row.image_url && (
+                          <img src={row.image_url} alt="" className="w-10 h-10 rounded object-cover" />
+                        )}
+                        <span className={`text-sm truncate ${
+                          isBest ? "text-emerald-400 font-semibold" : isWorst ? "text-red-400 font-semibold" : "text-gray-300"
+                        }`}>
+                          {rp.image_meta.path}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <ScoreBadge score={row.overall_score} grade={row.grade} size="sm" />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono border ${getGradeBg(row.grade)} ${getGradeColor(row.grade)}`}>
+                        {row.grade}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${getScoreBarClass(row.overall_score)}`} style={{ width: `${row.overall_score}%` }} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-400 hidden md:table-cell">
+                      {rp.technical?.overall.toFixed(1) ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-400 hidden md:table-cell">
+                      {rp.aesthetic?.overall.toFixed(1) ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-400 hidden lg:table-cell">
+                      {rp.composition?.overall.toFixed(1) ?? "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Delete Confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+            <h3 className="text-white mb-2">Delete Batch?</h3>
+            <p className="text-sm text-gray-400 mb-6">This will delete all {reports.length} reports in this batch. This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2 rounded-lg text-sm bg-white/[0.05] text-gray-300 border border-white/[0.08]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-lg text-sm bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

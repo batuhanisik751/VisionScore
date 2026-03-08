@@ -30,3 +30,12 @@ class ReportListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class BatchSaveResponse(BaseModel):
+    batch_id: str
+    saved_count: int
+
+
+class BatchGroupsResponse(BaseModel):
+    batches: list[dict[str, Any]]

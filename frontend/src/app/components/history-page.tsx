@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { getGradeColor, getGradeBg, type AnalysisReport } from "./mock-data";
 import { ScoreBadge } from "./score-badge";
-import { Search, LayoutGrid, List, Calendar, Trash2, ImagePlus, Filter, Loader2 } from "lucide-react";
+import { Search, LayoutGrid, List, Calendar, Trash2, ImagePlus, Filter, Loader2, FolderOpen, Image } from "lucide-react";
 
 interface DbRow {
   id: string;
@@ -11,6 +11,18 @@ interface DbRow {
   overall_score: number;
   grade: string;
   full_report: AnalysisReport;
+  report_type?: string;
+  batch_id?: string;
+}
+
+interface BatchGroup {
+  batch_id: string;
+  created_at: string;
+  count: number;
+  average_score: number;
+  best_score: number;
+  best_grade: string;
+  image_urls: string[];
 }
 
 function rowToReport(row: DbRow): AnalysisReport {
@@ -22,32 +34,53 @@ function rowToReport(row: DbRow): AnalysisReport {
   };
 }
 
+type TypeFilter = "all" | "images" | "batches";
+
 export function HistoryPage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [gradeFilter, setGradeFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [reports, setReports] = useState<AnalysisReport[]>([]);
+  const [batches, setBatches] = useState<BatchGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteBatchId, setDeleteBatchId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    fetchReports();
+    fetchData();
   }, []);
 
-  const fetchReports = async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/reports?limit=100");
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || `Failed to load reports (${res.status})`);
+      // Try with report_type filter first; fall back to unfiltered if the
+      // column doesn't exist yet (migration not applied).
+      let reportsRes = await fetch("/api/v1/reports?limit=100&report_type=single");
+      if (!reportsRes.ok) {
+        reportsRes = await fetch("/api/v1/reports?limit=100");
       }
-      const data = await res.json();
-      setReports(data.reports.map((r: DbRow) => rowToReport(r)));
+      if (!reportsRes.ok) {
+        const body = await reportsRes.json().catch(() => null);
+        throw new Error(body?.detail || `Failed to load reports (${reportsRes.status})`);
+      }
+      const reportsData = await reportsRes.json();
+      setReports(reportsData.reports.map((r: DbRow) => rowToReport(r)));
+
+      // Batch groups — silently ignore if endpoint isn't available
+      try {
+        const batchesRes = await fetch("/api/v1/reports/batches");
+        if (batchesRes.ok) {
+          const batchesData = await batchesRes.json();
+          setBatches(batchesData.batches || []);
+        }
+      } catch {
+        // batches endpoint not available — that's fine
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load reports");
     } finally {
@@ -69,6 +102,14 @@ export function HistoryPage() {
     return true;
   });
 
+  const filteredBatches = batches.filter((b) => {
+    if (gradeFilter && b.best_grade !== gradeFilter) return false;
+    if (searchQuery) {
+      return b.batch_id.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+    return true;
+  });
+
   const handleDelete = async (id: string) => {
     setDeleting(true);
     try {
@@ -86,17 +127,39 @@ export function HistoryPage() {
     }
   };
 
+  const handleDeleteBatch = async (batchId: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/reports/batch/${batchId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Delete failed (${res.status})`);
+      }
+      setBatches((prev) => prev.filter((b) => b.batch_id !== batchId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+      setDeleteBatchId(null);
+    }
+  };
+
   const formatDate = (ts: string) => {
     const d = new Date(ts);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
+
+  const totalCount = reports.length + batches.length;
+  const showImages = typeFilter === "all" || typeFilter === "images";
+  const showBatches = typeFilter === "all" || typeFilter === "batches";
+  const hasContent = (showImages && filtered.length > 0) || (showBatches && filteredBatches.length > 0);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl text-white" style={{ fontWeight: 700 }}>Reports</h1>
-          <p className="text-sm text-gray-500">{reports.length} saved analyses</p>
+          <p className="text-sm text-gray-500">{totalCount} saved analyses</p>
         </div>
         <button
           onClick={() => navigate("/")}
@@ -104,6 +167,24 @@ export function HistoryPage() {
         >
           <ImagePlus className="w-4 h-4" /> New Analysis
         </button>
+      </div>
+
+      {/* Type Filter Tabs */}
+      <div className="flex gap-2 mb-4">
+        {(["all", "images", "batches"] as TypeFilter[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTypeFilter(t)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              typeFilter === t
+                ? "bg-white/[0.08] text-white"
+                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]"
+            }`}
+          >
+            {t === "all" ? null : t === "images" ? <Image className="w-3.5 h-3.5" /> : <FolderOpen className="w-3.5 h-3.5" />}
+            {t === "all" ? "All" : t === "images" ? "Images" : "Batches"}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -128,9 +209,7 @@ export function HistoryPage() {
             >
               <option value="">All Grades</option>
               {["S", "A", "B", "C", "D", "F"].map((g) => (
-                <option key={g} value={g}>
-                  Grade {g}
-                </option>
+                <option key={g} value={g}>Grade {g}</option>
               ))}
             </select>
           </div>
@@ -167,7 +246,7 @@ export function HistoryPage() {
       )}
 
       {/* Empty State */}
-      {!loading && filtered.length === 0 && (
+      {!loading && !hasContent && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="p-4 rounded-full bg-white/[0.04] mb-4">
             <ImagePlus className="w-8 h-8 text-gray-600" />
@@ -185,37 +264,70 @@ export function HistoryPage() {
         </div>
       )}
 
-      {/* Grid View */}
-      {!loading && viewMode === "grid" && filtered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((report) => (
-            <ReportGridCard
-              key={report.id}
-              report={report}
-              onView={() => navigate(`/report/${report.id}`)}
-              onDelete={() => setDeleteId(report.id)}
-              formatDate={formatDate}
-            />
-          ))}
+      {/* Batch Cards */}
+      {!loading && showBatches && filteredBatches.length > 0 && (
+        <div className="mb-6">
+          {typeFilter === "all" && (
+            <h2 className="text-sm text-gray-500 mb-3 flex items-center gap-1.5">
+              <FolderOpen className="w-3.5 h-3.5" /> Batches
+            </h2>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredBatches.map((batch) => (
+              <BatchGroupCard
+                key={batch.batch_id}
+                batch={batch}
+                onView={() => navigate(`/batch-report/${batch.batch_id}`)}
+                onDelete={() => setDeleteBatchId(batch.batch_id)}
+                formatDate={formatDate}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* List View */}
-      {!loading && viewMode === "list" && filtered.length > 0 && (
-        <div className="space-y-2">
-          {filtered.map((report) => (
-            <ReportListRow
-              key={report.id}
-              report={report}
-              onView={() => navigate(`/report/${report.id}`)}
-              onDelete={() => setDeleteId(report.id)}
-              formatDate={formatDate}
-            />
-          ))}
-        </div>
+      {/* Image Reports */}
+      {!loading && showImages && filtered.length > 0 && (
+        <>
+          {typeFilter === "all" && filteredBatches.length > 0 && (
+            <h2 className="text-sm text-gray-500 mb-3 flex items-center gap-1.5">
+              <Image className="w-3.5 h-3.5" /> Images
+            </h2>
+          )}
+
+          {/* Grid View */}
+          {viewMode === "grid" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((report) => (
+                <ReportGridCard
+                  key={report.id}
+                  report={report}
+                  onView={() => navigate(`/report/${report.id}`)}
+                  onDelete={() => setDeleteId(report.id)}
+                  formatDate={formatDate}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* List View */}
+          {viewMode === "list" && (
+            <div className="space-y-2">
+              {filtered.map((report) => (
+                <ReportListRow
+                  key={report.id}
+                  report={report}
+                  onView={() => navigate(`/report/${report.id}`)}
+                  onDelete={() => setDeleteId(report.id)}
+                  formatDate={formatDate}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Report Confirmation */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full">
@@ -239,6 +351,97 @@ export function HistoryPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Batch Confirmation */}
+      {deleteBatchId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+            <h3 className="text-white mb-2">Delete Batch?</h3>
+            <p className="text-sm text-gray-400 mb-6">This will delete all reports in this batch. This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteBatchId(null)}
+                className="flex-1 py-2 rounded-lg text-sm bg-white/[0.05] text-gray-300 border border-white/[0.08]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteBatch(deleteBatchId)}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-lg text-sm bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BatchGroupCard({
+  batch,
+  onView,
+  onDelete,
+  formatDate,
+}: {
+  batch: BatchGroup;
+  onView: () => void;
+  onDelete: () => void;
+  formatDate: (ts: string) => string;
+}) {
+  return (
+    <div
+      onClick={onView}
+      className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden cursor-pointer hover:bg-white/[0.05] hover:border-white/[0.1] transition-all group"
+    >
+      {/* Thumbnail strip */}
+      <div className="relative h-28 overflow-hidden flex">
+        {batch.image_urls.length > 0 ? (
+          batch.image_urls.map((url, i) => (
+            <img
+              key={i}
+              src={url}
+              alt=""
+              className="h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              style={{ width: `${100 / Math.min(batch.image_urls.length, 4)}%` }}
+            />
+          ))
+        ) : (
+          <div className="w-full h-full bg-white/[0.04] flex items-center justify-center text-gray-600">
+            <FolderOpen className="w-8 h-8" />
+          </div>
+        )}
+        <div className="absolute top-3 right-3">
+          <ScoreBadge score={batch.average_score} grade={batch.best_grade} size="sm" />
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="absolute top-3 left-3 p-1.5 rounded-full bg-black/50 text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <FolderOpen className="w-3 h-3 inline mr-1" />
+            Batch
+          </span>
+          <span className="text-xs text-gray-500">{batch.count} images</span>
+          <span className={`px-2 py-0.5 rounded-full text-xs border ${getGradeBg(batch.best_grade)} ${getGradeColor(batch.best_grade)}`}>
+            {batch.best_grade}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <Calendar className="w-3 h-3" />
+            {formatDate(batch.created_at)}
+          </div>
+          <span className="text-xs text-gray-400 tabular-nums">avg {batch.average_score}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -271,10 +474,7 @@ function ReportGridCard({
           <ScoreBadge score={report.overall_score} grade={report.grade} size="sm" />
         </div>
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="absolute top-3 left-3 p-1.5 rounded-full bg-black/50 text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -340,10 +540,7 @@ function ReportListRow({
       <div className="flex items-center gap-3">
         <ScoreBadge score={report.overall_score} grade={report.grade} size="sm" />
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="p-1.5 rounded-full text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
         >
           <Trash2 className="w-4 h-4" />

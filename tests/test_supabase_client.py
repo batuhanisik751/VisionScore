@@ -94,12 +94,51 @@ class TestSaveReport:
         assert row["overall_score"] == 72.5
         assert row["grade"] == "B"
         assert row["image_url"] == "https://img.url"
+        assert row["report_type"] == "single"
+        assert row["batch_id"] is None
+
+    async def test_inserts_with_batch_fields(self, client, mock_supabase_sdk, sample_report):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.insert.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "abc-456"}])
+
+        report_id = await client.save_report(
+            sample_report, image_url="https://img.url",
+            report_type="batch", batch_id="batch-uuid-1",
+        )
+
+        assert report_id == "abc-456"
+        row = table.insert.call_args[0][0]
+        assert row["report_type"] == "batch"
+        assert row["batch_id"] == "batch-uuid-1"
+
+    async def test_falls_back_without_batch_columns(self, client, mock_supabase_sdk, sample_report):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+
+        call_count = 0
+
+        def _mock_insert(row):
+            nonlocal call_count
+            call_count += 1
+            if "report_type" in row:
+                raise Exception("column 'report_type' does not exist")
+            result = MagicMock()
+            result.execute.return_value = MagicMock(data=[{"id": "fallback-id"}])
+            return result
+
+        table.insert.side_effect = _mock_insert
+
+        report_id = await client.save_report(sample_report, image_url="https://img.url")
+
+        assert report_id == "fallback-id"
+        assert call_count == 2
 
     async def test_returns_none_on_insert_failure(self, client, mock_supabase_sdk, sample_report):
         table = MagicMock()
         mock_supabase_sdk.table.return_value = table
-        table.insert.return_value = table
-        table.execute.side_effect = Exception("relation does not exist")
+        table.insert.side_effect = Exception("relation does not exist")
 
         report_id = await client.save_report(sample_report)
 
@@ -146,6 +185,20 @@ class TestListReports:
         assert total == 5
         table.range.assert_called_once_with(0, 1)
 
+    async def test_filters_by_report_type(self, client, mock_supabase_sdk):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.range.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "1"}], count=1)
+
+        reports, total = await client.list_reports(report_type="single")
+
+        assert len(reports) == 1
+        table.eq.assert_called_once_with("report_type", "single")
+
 
 class TestDeleteReport:
     async def test_returns_true_when_deleted(self, client, mock_supabase_sdk):
@@ -167,6 +220,73 @@ class TestDeleteReport:
         table.execute.return_value = MagicMock(data=[])
 
         result = await client.delete_report("nonexistent")
+
+        assert result is False
+
+
+class TestGetBatchReports:
+    async def test_returns_batch_reports(self, client, mock_supabase_sdk):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "1", "batch_id": "b1"}, {"id": "2", "batch_id": "b1"}]
+        )
+
+        reports = await client.get_batch_reports("b1")
+
+        assert len(reports) == 2
+        table.eq.assert_called_once_with("batch_id", "b1")
+
+
+class TestListBatchGroups:
+    async def test_returns_grouped_batches(self, client, mock_supabase_sdk):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.execute.return_value = MagicMock(data=[
+            {"batch_id": "b1", "overall_score": 80, "grade": "A", "created_at": "2025-01-01", "image_url": "url1"},
+            {"batch_id": "b1", "overall_score": 60, "grade": "C", "created_at": "2025-01-01", "image_url": "url2"},
+            {"batch_id": "b2", "overall_score": 90, "grade": "S", "created_at": "2025-01-02", "image_url": "url3"},
+        ])
+
+        groups = await client.list_batch_groups()
+
+        assert len(groups) == 2
+        b2 = next(g for g in groups if g["batch_id"] == "b2")
+        assert b2["count"] == 1
+        assert b2["best_score"] == 90
+
+        b1 = next(g for g in groups if g["batch_id"] == "b1")
+        assert b1["count"] == 2
+        assert b1["average_score"] == 70.0
+
+
+class TestDeleteBatch:
+    async def test_returns_true_when_deleted(self, client, mock_supabase_sdk):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "1"}, {"id": "2"}])
+
+        result = await client.delete_batch("b1")
+
+        assert result is True
+        table.eq.assert_called_once_with("batch_id", "b1")
+
+    async def test_returns_false_when_not_found(self, client, mock_supabase_sdk):
+        table = MagicMock()
+        mock_supabase_sdk.table.return_value = table
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+
+        result = await client.delete_batch("nonexistent")
 
         assert result is False
 

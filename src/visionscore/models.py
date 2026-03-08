@@ -67,3 +67,29 @@ class AnalysisReport(BaseModel):
     grade: Grade = Grade.F
     timestamp: datetime = Field(default_factory=datetime.now)
     analysis_time_seconds: float = 0.0
+
+
+class BatchImageResult(BaseModel):
+    """Result for a single image within a batch run."""
+
+    report: AnalysisReport | None = None
+    error: str | None = None
+    filename: str = ""
+
+
+class BatchResult(BaseModel):
+    """Aggregate result of analyzing a directory of images."""
+
+    directory: str = ""
+    total_images: int = 0
+    successful: int = 0
+    failed: int = 0
+    results: list[BatchImageResult] = Field(default_factory=list)
+    average_score: float = 0.0
+    best_image: str = ""
+    best_score: float = 0.0
+    worst_image: str = ""
+    worst_score: float = 100.0
+    grade_distribution: dict[str, int] = Field(default_factory=dict)
+    total_time_seconds: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.now)

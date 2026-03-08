@@ -20,6 +20,8 @@ from fastapi.responses import FileResponse
 from visionscore import __version__
 from visionscore.api.schemas import (
     AnalyzeResponse,
+    BatchGroupsResponse,
+    BatchSaveResponse,
     HealthResponse,
     ReportListResponse,
     SavedReportResponse,
@@ -294,11 +296,134 @@ async def save_report(
 async def list_reports(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    report_type: str | None = Query(None, description="Filter by 'single' or 'batch'"),
     db: SupabaseClient = Depends(_require_supabase),
 ):
     """List saved analysis reports with pagination."""
-    reports, total = await db.list_reports(limit=limit, offset=offset)
+    reports, total = await db.list_reports(limit=limit, offset=offset, report_type=report_type)
     return ReportListResponse(reports=reports, total=total, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------------------------
+# Batch routes (must be defined BEFORE /reports/{report_id} to avoid
+# FastAPI matching "batch" or "batches" as a report_id parameter)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/reports/batch",
+    response_model=BatchSaveResponse,
+    tags=["reports"],
+    summary="Save a batch of analyzed reports",
+    responses={
+        400: {"description": "Invalid report data"},
+        503: {"description": "Supabase not configured"},
+    },
+)
+async def save_batch(
+    files: list[UploadFile] = File(...),
+    reports_json: str = Form(...),
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Save multiple already-analyzed reports as a batch."""
+    import json
+    from visionscore.models import AnalysisReport
+
+    try:
+        reports_map = json.loads(reports_json)
+    except Exception:
+        raise HTTPException(400, "Invalid reports JSON")
+
+    batch_id = str(uuid4())
+    saved_count = 0
+
+    for file in files:
+        filename = file.filename or "image.jpg"
+        report_data = reports_map.get(filename)
+        if not report_data:
+            continue
+
+        try:
+            report = AnalysisReport(**report_data)
+        except Exception:
+            continue
+
+        content = await _read_upload(file)
+
+        image_url = await db.upload_image(content, filename)
+        if image_url is None:
+            image_url = _save_image_locally(content, filename)
+
+        report_id = await db.save_report(
+            report, image_url=image_url, report_type="batch", batch_id=batch_id
+        )
+        if report_id:
+            saved_count += 1
+
+    if saved_count == 0:
+        raise HTTPException(400, "No reports could be saved")
+
+    return BatchSaveResponse(batch_id=batch_id, saved_count=saved_count)
+
+
+@router.get(
+    "/reports/batches",
+    response_model=BatchGroupsResponse,
+    tags=["reports"],
+    summary="List batch groups",
+    responses={503: {"description": "Supabase not configured"}},
+)
+async def list_batch_groups(
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """List all batch groups with aggregated stats."""
+    batches = await db.list_batch_groups()
+    return BatchGroupsResponse(batches=batches)
+
+
+@router.get(
+    "/reports/batch/{batch_id}",
+    tags=["reports"],
+    summary="Get all reports in a batch",
+    responses={
+        404: {"description": "Batch not found"},
+        503: {"description": "Supabase not configured"},
+    },
+)
+async def get_batch(
+    batch_id: str,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Fetch all reports belonging to a batch."""
+    reports = await db.get_batch_reports(batch_id)
+    if not reports:
+        raise HTTPException(404, "Batch not found")
+    return {"batch_id": batch_id, "reports": reports}
+
+
+@router.delete(
+    "/reports/batch/{batch_id}",
+    tags=["reports"],
+    summary="Delete an entire batch",
+    responses={
+        404: {"description": "Batch not found"},
+        503: {"description": "Supabase not configured"},
+    },
+)
+async def delete_batch(
+    batch_id: str,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Delete all reports in a batch."""
+    deleted = await db.delete_batch(batch_id)
+    if not deleted:
+        raise HTTPException(404, "Batch not found")
+    return {"detail": "Batch deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Single report routes (parameterized — must come after /reports/batch*)
+# ---------------------------------------------------------------------------
 
 
 @router.get(

@@ -28,7 +28,7 @@ export function ResultsPage({ saved }: ResultsPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const state = location.state as { report?: AnalysisReport; warnings?: string[]; imageUrl?: string; file?: File } | null;
+  const state = location.state as { report?: AnalysisReport; warnings?: string[]; imageUrl?: string; file?: File; batchId?: string } | null;
 
   const [fetchedReport, setFetchedReport] = useState<AnalysisReport | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
@@ -92,7 +92,7 @@ export function ResultsPage({ saved }: ResultsPageProps) {
       }
     }
     setShowDeleteConfirm(false);
-    navigate("/history");
+    navigate(state?.batchId ? `/batch-report/${state.batchId}` : "/history");
   };
 
   const handleSave = async () => {
@@ -268,11 +268,11 @@ export function ResultsPage({ saved }: ResultsPageProps) {
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => navigate(saved ? "/history" : "/")}
+          onClick={() => navigate(state?.batchId ? `/batch-report/${state.batchId}` : saved ? "/history" : "/")}
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          {saved ? "Back to Reports" : "Analyze Another"}
+          {state?.batchId ? "Back to Batch" : saved ? "Back to Reports" : "Analyze Another"}
         </button>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <Clock className="w-3 h-3" />

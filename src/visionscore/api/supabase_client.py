@@ -46,7 +46,13 @@ class SupabaseClient:
 
         return await asyncio.to_thread(_upload)
 
-    async def save_report(self, report: AnalysisReport, image_url: str | None = None) -> str | None:
+    async def save_report(
+        self,
+        report: AnalysisReport,
+        image_url: str | None = None,
+        report_type: str = "single",
+        batch_id: str | None = None,
+    ) -> str | None:
         """Insert analysis report into the database and return the row ID, or None on failure."""
         data = report.model_dump(mode="json")
         row = {
@@ -63,6 +69,8 @@ class SupabaseClient:
             "grade": report.grade.value,
             "analysis_time_seconds": report.analysis_time_seconds,
             "full_report": data,
+            "report_type": report_type,
+            "batch_id": batch_id,
         }
 
         def _insert() -> str | None:
@@ -71,7 +79,21 @@ class SupabaseClient:
                 return result.data[0]["id"]
             except Exception as e:
                 logger.warning("Failed to save report: %s", e)
-                return None
+                # Retry without batch columns in case migration hasn't been applied
+                fallback_row = {
+                    k: v for k, v in row.items() if k not in ("report_type", "batch_id")
+                }
+                try:
+                    result = (
+                        self._client.table("analysis_reports")
+                        .insert(fallback_row)
+                        .execute()
+                    )
+                    logger.info("Saved report without batch columns (migration pending)")
+                    return result.data[0]["id"]
+                except Exception as e2:
+                    logger.warning("Fallback save also failed: %s", e2)
+                    return None
 
         return await asyncio.to_thread(_insert)
 
@@ -86,20 +108,116 @@ class SupabaseClient:
 
         return await asyncio.to_thread(_select)
 
-    async def list_reports(self, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
-        """List reports with pagination. Returns (rows, total_count)."""
+    async def list_reports(
+        self, limit: int = 20, offset: int = 0, report_type: str | None = None
+    ) -> tuple[list[dict], int]:
+        """List reports with pagination and optional type filter. Returns (rows, total_count)."""
 
         def _list() -> tuple[list[dict], int]:
-            result = (
+            query = (
                 self._client.table("analysis_reports")
                 .select("*", count="exact")
-                .order("created_at", desc=True)
+            )
+            if report_type:
+                try:
+                    result = (
+                        query.eq("report_type", report_type)
+                        .order("created_at", desc=True)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    )
+                    return result.data, result.count or 0
+                except Exception:
+                    # report_type column may not exist yet — fall back to unfiltered
+                    query = (
+                        self._client.table("analysis_reports")
+                        .select("*", count="exact")
+                    )
+            result = (
+                query.order("created_at", desc=True)
                 .range(offset, offset + limit - 1)
                 .execute()
             )
             return result.data, result.count or 0
 
         return await asyncio.to_thread(_list)
+
+    async def get_batch_reports(self, batch_id: str) -> list[dict]:
+        """Fetch all reports belonging to a batch."""
+
+        def _select() -> list[dict]:
+            try:
+                result = (
+                    self._client.table("analysis_reports")
+                    .select("*")
+                    .eq("batch_id", batch_id)
+                    .order("created_at", desc=True)
+                    .execute()
+                )
+                return result.data
+            except Exception as e:
+                logger.warning("Failed to fetch batch reports: %s", e)
+                return []
+
+        return await asyncio.to_thread(_select)
+
+    async def list_batch_groups(self) -> list[dict]:
+        """List batch groups with aggregated stats."""
+
+        def _list() -> list[dict]:
+            try:
+                result = (
+                    self._client.table("analysis_reports")
+                    .select("*")
+                    .eq("report_type", "batch")
+                    .order("created_at", desc=True)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning("Failed to list batch groups: %s", e)
+                return []
+
+            groups: dict[str, list[dict]] = {}
+            for row in result.data:
+                bid = row.get("batch_id")
+                if bid:
+                    groups.setdefault(bid, []).append(row)
+
+            batch_list = []
+            for bid, rows in groups.items():
+                scores = [r["overall_score"] for r in rows]
+                best_row = max(rows, key=lambda r: r["overall_score"])
+                batch_list.append({
+                    "batch_id": bid,
+                    "created_at": rows[0]["created_at"],
+                    "count": len(rows),
+                    "average_score": round(sum(scores) / len(scores), 1),
+                    "best_score": best_row["overall_score"],
+                    "best_grade": best_row["grade"],
+                    "image_urls": [r.get("image_url") for r in rows[:4] if r.get("image_url")],
+                })
+            batch_list.sort(key=lambda b: b["created_at"], reverse=True)
+            return batch_list
+
+        return await asyncio.to_thread(_list)
+
+    async def delete_batch(self, batch_id: str) -> bool:
+        """Delete all reports in a batch. Returns True if any rows were deleted."""
+
+        def _delete() -> bool:
+            try:
+                result = (
+                    self._client.table("analysis_reports")
+                    .delete()
+                    .eq("batch_id", batch_id)
+                    .execute()
+                )
+                return len(result.data) > 0
+            except Exception as e:
+                logger.warning("Failed to delete batch: %s", e)
+                return False
+
+        return await asyncio.to_thread(_delete)
 
     async def delete_report(self, report_id: str) -> bool:
         """Delete a report by ID. Returns True if a row was deleted."""

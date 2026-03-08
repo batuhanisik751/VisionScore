@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from visionscore.config import Settings
-from visionscore.models import AnalysisReport
-from visionscore.pipeline.loader import load_image
+from visionscore.models import AnalysisReport, BatchImageResult, BatchResult
+from visionscore.pipeline.loader import SUPPORTED_EXTENSIONS, load_image
 from visionscore.pipeline.metadata import extract_metadata
 from visionscore.scoring.aggregator import ScoreAggregator
 from visionscore.scoring.grading import assign_grade
@@ -91,3 +92,71 @@ class AnalysisOrchestrator:
         report.analysis_time_seconds = round(time.perf_counter() - start, 3)
 
         return report
+
+    def run_batch(
+        self,
+        directory: Path,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+    ) -> BatchResult:
+        """Analyze all supported images in a directory."""
+        self.warnings = []
+        start = time.perf_counter()
+
+        image_files = sorted(
+            f for f in directory.iterdir()
+            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+
+        results: list[BatchImageResult] = []
+        scores: list[float] = []
+        grade_counts: dict[str, int] = {}
+        batch_warnings: list[str] = []
+        best_image, best_score = "", 0.0
+        worst_image, worst_score = "", 100.0
+
+        for i, path in enumerate(image_files):
+            try:
+                report = self.run(path)
+                # Capture per-image warnings before next run() resets them
+                batch_warnings.extend(self.warnings)
+                results.append(BatchImageResult(report=report, filename=path.name))
+                scores.append(report.overall_score)
+
+                grade_name = report.grade.value
+                grade_counts[grade_name] = grade_counts.get(grade_name, 0) + 1
+
+                if report.overall_score >= best_score:
+                    best_score = report.overall_score
+                    best_image = path.name
+                if report.overall_score < worst_score:
+                    worst_score = report.overall_score
+                    worst_image = path.name
+            except Exception as e:
+                results.append(BatchImageResult(error=str(e), filename=path.name))
+                batch_warnings.append(f"{path.name}: {e}")
+
+            if progress_callback:
+                progress_callback(path.name, i + 1, len(image_files))
+
+        successful = len(scores)
+        failed = len(results) - successful
+        avg = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+        self.warnings = batch_warnings
+
+        batch = BatchResult(
+            directory=str(directory),
+            total_images=len(image_files),
+            successful=successful,
+            failed=failed,
+            results=results,
+            average_score=avg,
+            best_image=best_image,
+            best_score=best_score,
+            worst_image=worst_image,
+            worst_score=worst_score,
+            grade_distribution=grade_counts,
+            total_time_seconds=round(time.perf_counter() - start, 3),
+        )
+
+        return batch
