@@ -13,6 +13,7 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 - **Composition Analysis** -- Spectral residual saliency, rule of thirds, subject position, horizon, visual balance
 - **AI Feedback** -- Ollama + LLaVA for natural language critique, genre classification, strengths/improvements
 - **Score Aggregation** -- Weighted scoring with automatic redistribution. Grades: S/A/B/C/D/F
+- **Image Comparison** -- Side-by-side scoring of two images with diff highlights
 - **Batch Analysis** -- Analyze entire directories, comparative rankings, CSV export
 - **CLI Tool** -- Rich terminal output with score bars, JSON, and Markdown reports
 - **REST API** -- FastAPI with Supabase persistence, Swagger UI at `/docs`
@@ -92,6 +93,12 @@ visionscore analyze photo.jpg --skip-ai
 # View image metadata / EXIF
 visionscore info photo.jpg
 
+# Compare two images
+visionscore compare before.jpg after.jpg
+
+# Compare with JSON output
+visionscore compare before.jpg after.jpg --output json
+
 # Batch analyze a directory
 visionscore analyze-batch photos/ --skip-ai
 
@@ -159,7 +166,7 @@ src/visionscore/
   output/          # JSON, CLI, markdown, CSV reports
   api/             # FastAPI + Supabase client
 frontend/          # React + Vite + Tailwind dashboard
-tests/             # 181 tests (pytest)
+tests/             # 225 tests (pytest)
 scripts/           # Model download
 sql/               # Supabase schema
 docs/              # API reference, scoring methodology

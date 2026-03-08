@@ -187,3 +187,62 @@ def analyze_batch(
             file_content = format_csv(batch)
         save.write_text(file_content)
         console.print(f"[green]Report saved to {save}[/green]")
+
+
+@app.command()
+def compare(
+    image_a: Path = typer.Argument(..., help="Path to first image (before)"),
+    image_b: Path = typer.Argument(..., help="Path to second image (after)"),
+    output: str = typer.Option("text", help="Output format: text, json"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+    skip_ai: bool = typer.Option(False, "--skip-ai", help="Skip AI feedback analysis"),
+    weights: Optional[str] = typer.Option(
+        None, "--weights", help="Custom weights t:a:c:f (e.g. 25:30:25:20)"
+    ),
+    save: Optional[Path] = typer.Option(None, "--save", help="Save comparison report to file"),
+):
+    """Compare two images and show score differences."""
+    from visionscore.config import Settings
+    from visionscore.output import (
+        build_comparison,
+        format_comparison_json,
+        render_comparison,
+    )
+    from visionscore.pipeline.orchestrator import AnalysisOrchestrator
+
+    for img in (image_a, image_b):
+        if not img.is_file():
+            console.print(f"[red]Error: '{img}' is not a valid file[/red]")
+            raise typer.Exit(1)
+
+    settings = Settings()
+
+    if weights:
+        parsed = _parse_weights(weights)
+        if parsed is None:
+            raise typer.Exit(1)
+        settings.analysis_weights = parsed
+
+    orchestrator = AnalysisOrchestrator(settings=settings, skip_ai=skip_ai)
+
+    console.print(f"[dim]Analyzing image A: {image_a.name}...[/dim]")
+    report_a = orchestrator.run(image_a)
+    console.print(f"[dim]Analyzing image B: {image_b.name}...[/dim]")
+    report_b = orchestrator.run(image_b)
+
+    comparison = build_comparison(report_a, report_b)
+
+    if verbose:
+        total_time = report_a.analysis_time_seconds + report_b.analysis_time_seconds
+        console.print(f"[dim]Comparison completed in {total_time:.2f}s[/dim]")
+
+    if output == "json":
+        content = format_comparison_json(comparison)
+        console.print(content)
+    else:
+        render_comparison(comparison, console, warnings=orchestrator.warnings)
+
+    if save:
+        file_content = format_comparison_json(comparison)
+        save.write_text(file_content)
+        console.print(f"[green]Comparison report saved to {save}[/green]")

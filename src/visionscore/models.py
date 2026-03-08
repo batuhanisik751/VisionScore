@@ -74,6 +74,28 @@ class AnalysisReport(BaseModel):
     analysis_time_seconds: float = 0.0
 
 
+class ScoreDiff(BaseModel):
+    """Score difference between two analyses."""
+
+    label: str
+    score_a: float
+    score_b: float
+    diff: float  # b - a (positive = improved)
+
+
+class ComparisonReport(BaseModel):
+    """Result of comparing two image analyses."""
+
+    report_a: AnalysisReport
+    report_b: AnalysisReport
+    overall_diff: float = 0.0
+    category_diffs: list[ScoreDiff] = Field(default_factory=list)
+    detail_diffs: list[ScoreDiff] = Field(default_factory=list)
+    improved: list[str] = Field(default_factory=list)
+    degraded: list[str] = Field(default_factory=list)
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
 class BatchImageResult(BaseModel):
     """Result for a single image within a batch run."""
 
