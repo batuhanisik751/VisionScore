@@ -397,8 +397,8 @@ class TestAIPolish:
 
 
 class TestColorSuggestion:
-    def test_blue_cast_detected(self, image_dir: Path):
-        """Create an image with strong blue tint."""
+    def test_blue_cast_detected_with_kelvin(self, image_dir: Path):
+        """Image with strong blue tint should produce a positive Kelvin (warmer) adjustment."""
         arr = np.full((200, 200, 3), (200, 100, 100), dtype=np.uint8)  # heavy blue in BGR
         img = Image.fromarray(arr[:, :, ::-1])  # BGR -> RGB for Pillow
         path = image_dir / "blue_cast.jpg"
@@ -409,6 +409,279 @@ class TestColorSuggestion:
         analyzer = SuggestionsAnalyzer(technical=tech)
         result = analyzer.analyze(image)
         color_suggs = [s for s in result.suggestions if s.type == SuggestionType.COLOR]
-        # Should detect blue cast and suggest warmer
+        assert len(color_suggs) == 1
+        params = color_suggs[0].parameters
+        # Blue cast → mean_b < 128 → deviation_b negative → temp_adjust positive (warmer)
+        assert params["temp_adjust_kelvin"] > 0
+        assert "Temp" in color_suggs[0].instruction
+        assert "K" in color_suggs[0].instruction
+
+    def test_warm_cast_detected_with_kelvin(self, image_dir: Path):
+        """Image with warm/yellow tint should produce a negative Kelvin (cooler) adjustment."""
+        arr = np.full((200, 200, 3), (80, 160, 220), dtype=np.uint8)  # warm yellow in BGR
+        img = Image.fromarray(arr[:, :, ::-1])  # BGR -> RGB for Pillow
+        path = image_dir / "warm_cast.jpg"
+        img.save(path, "JPEG", quality=95)
+
+        image = _make_loaded_image(path)
+        tech = _make_technical()
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        color_suggs = [s for s in result.suggestions if s.type == SuggestionType.COLOR]
+        assert len(color_suggs) >= 1
+        params = color_suggs[0].parameters
+        # Warm cast → mean_b > 128 → deviation_b positive → temp_adjust negative (cooler)
+        assert params["temp_adjust_kelvin"] < 0
+        assert "Temp" in color_suggs[0].instruction
+
+    def test_magenta_cast_produces_tint_adjust(self, image_dir: Path):
+        """Image with strong magenta should produce negative tint adjustment."""
+        arr = np.full((200, 200, 3), (180, 80, 200), dtype=np.uint8)  # magenta-ish BGR
+        img = Image.fromarray(arr[:, :, ::-1])
+        path = image_dir / "magenta_cast.jpg"
+        img.save(path, "JPEG", quality=95)
+
+        image = _make_loaded_image(path)
+        tech = _make_technical()
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        color_suggs = [s for s in result.suggestions if s.type == SuggestionType.COLOR]
         if color_suggs:
-            assert color_suggs[0].parameters["warmth"] == "warmer"
+            params = color_suggs[0].parameters
+            assert "tint_adjust" in params
+            assert "mean_a" in params
+            assert "mean_b" in params
+
+    def test_neutral_image_no_color_suggestion(self, normal_image_path: Path):
+        """Neutral gray gradient should produce no color suggestion."""
+        image = _make_loaded_image(normal_image_path)
+        tech = _make_technical()
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        color_suggs = [s for s in result.suggestions if s.type == SuggestionType.COLOR]
+        assert len(color_suggs) == 0
+
+
+# ------------------------------------------------------------------
+# Contrast slider value tests
+# ------------------------------------------------------------------
+
+
+class TestContrastSliderValues:
+    def test_flat_image_produces_slider_values(self, flat_gray_image_path: Path):
+        """Flat gray image should produce contrast/blacks/whites slider recommendations."""
+        image = _make_loaded_image(flat_gray_image_path)
+        tech = _make_technical(dynamic_range=20)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        contrast_suggs = [s for s in result.suggestions if s.type == SuggestionType.CONTRAST]
+        assert len(contrast_suggs) == 1
+        params = contrast_suggs[0].parameters
+        assert "contrast_slider" in params
+        assert "blacks_slider" in params
+        assert "whites_slider" in params
+        assert "black_point" in params
+        assert "white_point" in params
+        # Flat gray = narrow range → large contrast bump
+        assert params["contrast_slider"] > 0
+        assert params["blacks_slider"] < 0  # Negative = deepen blacks
+        assert params["whites_slider"] > 0
+
+    def test_black_white_points_in_instruction(self, flat_gray_image_path: Path):
+        """Instruction should contain the black-white point range."""
+        image = _make_loaded_image(flat_gray_image_path)
+        tech = _make_technical(dynamic_range=20)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        contrast_suggs = [s for s in result.suggestions if s.type == SuggestionType.CONTRAST]
+        instruction = contrast_suggs[0].instruction
+        assert "Blacks" in instruction
+        assert "Whites" in instruction
+        assert "0\u2013255" in instruction  # shows full range reference
+
+    def test_normal_contrast_no_suggestion(self, normal_image_path: Path):
+        """Full-range gradient should not trigger contrast suggestion when score is high."""
+        image = _make_loaded_image(normal_image_path)
+        tech = _make_technical(dynamic_range=80)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        contrast_suggs = [s for s in result.suggestions if s.type == SuggestionType.CONTRAST]
+        assert len(contrast_suggs) == 0
+
+
+# ------------------------------------------------------------------
+# Sharpness USM parameter tests
+# ------------------------------------------------------------------
+
+
+class TestSharpnessUSMParameters:
+    def test_very_blurry_max_usm(self, blurry_image_path: Path):
+        """Sharpness < 20 should produce strongest USM: 150%/1.5px/0 threshold."""
+        image = _make_loaded_image(blurry_image_path)
+        tech = _make_technical(sharpness=15)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        sharp_suggs = [s for s in result.suggestions if s.type == SuggestionType.SHARPNESS]
+        assert len(sharp_suggs) == 1
+        params = sharp_suggs[0].parameters
+        assert params["usm_amount_pct"] == 150
+        assert params["usm_radius_px"] == 1.5
+        assert params["usm_threshold"] == 0
+        assert params["lr_sharpening"] == 120
+
+    def test_moderate_blur_medium_usm(self, blurry_image_path: Path):
+        """Sharpness 20-35 should produce medium USM: 100%/1.0px/2 threshold."""
+        image = _make_loaded_image(blurry_image_path)
+        tech = _make_technical(sharpness=30)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        sharp_suggs = [s for s in result.suggestions if s.type == SuggestionType.SHARPNESS]
+        assert len(sharp_suggs) == 1
+        params = sharp_suggs[0].parameters
+        assert params["usm_amount_pct"] == 100
+        assert params["usm_radius_px"] == 1.0
+        assert params["usm_threshold"] == 2
+        assert params["lr_sharpening"] == 80
+
+    def test_slight_blur_light_usm(self, blurry_image_path: Path):
+        """Sharpness 35-50 should produce light USM: 60%/0.8px/4 threshold."""
+        image = _make_loaded_image(blurry_image_path)
+        tech = _make_technical(sharpness=45)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        sharp_suggs = [s for s in result.suggestions if s.type == SuggestionType.SHARPNESS]
+        assert len(sharp_suggs) == 1
+        params = sharp_suggs[0].parameters
+        assert params["usm_amount_pct"] == 60
+        assert params["usm_radius_px"] == 0.8
+        assert params["usm_threshold"] == 4
+        assert params["lr_sharpening"] == 50
+
+    def test_instruction_contains_usm_params(self, blurry_image_path: Path):
+        """Instruction should mention Unsharp Mask parameters and Lightroom."""
+        image = _make_loaded_image(blurry_image_path)
+        tech = _make_technical(sharpness=25)
+        analyzer = SuggestionsAnalyzer(technical=tech)
+        result = analyzer.analyze(image)
+        sharp_suggs = [s for s in result.suggestions if s.type == SuggestionType.SHARPNESS]
+        instruction = sharp_suggs[0].instruction
+        assert "Unsharp Mask" in instruction
+        assert "Lightroom" in instruction
+        assert "/100" in instruction  # score reference
+
+
+# ------------------------------------------------------------------
+# Composition reframe tests
+# ------------------------------------------------------------------
+
+
+class TestCompositionReframe:
+    def test_low_balance_with_left_centroid(self, normal_image_path: Path):
+        """Low balance + subject on left should identify left as heavy side."""
+        image = _make_loaded_image(normal_image_path)
+        comp = _make_composition(balance=20, centroid=(0.3, 0.4))
+        analyzer = SuggestionsAnalyzer(composition=comp)
+        result = analyzer.analyze(image)
+        comp_suggs = [s for s in result.suggestions if s.type == SuggestionType.COMPOSITION]
+        assert len(comp_suggs) == 1
+        params = comp_suggs[0].parameters
+        assert "left" in params["heavy_side"]
+        assert params["deficit"] > 0
+        assert "right" in comp_suggs[0].instruction  # suggests adding interest to opposite side
+
+    def test_low_balance_with_right_centroid(self, normal_image_path: Path):
+        """Low balance + subject on right should identify right as heavy side."""
+        image = _make_loaded_image(normal_image_path)
+        comp = _make_composition(balance=25, centroid=(0.7, 0.6))
+        analyzer = SuggestionsAnalyzer(composition=comp)
+        result = analyzer.analyze(image)
+        comp_suggs = [s for s in result.suggestions if s.type == SuggestionType.COMPOSITION]
+        assert len(comp_suggs) == 1
+        params = comp_suggs[0].parameters
+        assert "right" in params["heavy_side"]
+        assert "bottom" in params["heavy_side"]
+        assert "left" in comp_suggs[0].instruction  # suggests opposite side
+
+    def test_deficit_calculation(self, normal_image_path: Path):
+        """Deficit should equal balance_trigger minus actual balance."""
+        image = _make_loaded_image(normal_image_path)
+        comp = _make_composition(balance=15, centroid=(0.5, 0.5))
+        thresholds = SuggestionThresholds(balance_trigger=40.0)
+        analyzer = SuggestionsAnalyzer(composition=comp, thresholds=thresholds)
+        result = analyzer.analyze(image)
+        comp_suggs = [s for s in result.suggestions if s.type == SuggestionType.COMPOSITION]
+        assert len(comp_suggs) == 1
+        assert comp_suggs[0].parameters["deficit"] == 25.0
+
+    def test_balanced_no_suggestion(self, normal_image_path: Path):
+        """High balance score should produce no reframe suggestion."""
+        image = _make_loaded_image(normal_image_path)
+        comp = _make_composition(balance=80)
+        analyzer = SuggestionsAnalyzer(composition=comp)
+        result = analyzer.analyze(image)
+        comp_suggs = [s for s in result.suggestions if s.type == SuggestionType.COMPOSITION]
+        assert len(comp_suggs) == 0
+
+
+# ------------------------------------------------------------------
+# AI polish prompt tests
+# ------------------------------------------------------------------
+
+
+class TestAIPolishPrompt:
+    def test_prompt_preserves_numeric_values_instruction(self, normal_image_path: Path):
+        """The AI polish prompt should instruct preserving all numeric values."""
+        image = _make_loaded_image(normal_image_path)
+        tech = _make_technical(exposure=30)
+
+        polished_response = MagicMock()
+        polished_response.message.content = (
+            '[{"type": "exposure", "instruction": "Brighten by +1.0 stops in Lightroom"}]'
+        )
+
+        with patch("ollama.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.chat.return_value = polished_response
+            mock_client_cls.return_value = mock_client
+
+            analyzer = SuggestionsAnalyzer(
+                technical=tech,
+                ollama_host="http://fake:11434",
+                ollama_model="llava",
+            )
+            analyzer.analyze(image)
+
+            # Verify the prompt sent to ollama contains numeric preservation instruction
+            call_args = mock_client.chat.call_args
+            messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+            prompt_text = messages[0]["content"]
+            assert "preserve ALL numeric values" in prompt_text.lower() or "MUST preserve ALL numeric values" in prompt_text
+
+    def test_prompt_references_specific_tools(self, normal_image_path: Path):
+        """The AI polish prompt should mention Lightroom, Photoshop, Camera RAW."""
+        image = _make_loaded_image(normal_image_path)
+        tech = _make_technical(exposure=30)
+
+        polished_response = MagicMock()
+        polished_response.message.content = (
+            '[{"type": "exposure", "instruction": "Brighten in Lightroom"}]'
+        )
+
+        with patch("ollama.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.chat.return_value = polished_response
+            mock_client_cls.return_value = mock_client
+
+            analyzer = SuggestionsAnalyzer(
+                technical=tech,
+                ollama_host="http://fake:11434",
+                ollama_model="llava",
+            )
+            analyzer.analyze(image)
+
+            call_args = mock_client.chat.call_args
+            messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+            prompt_text = messages[0]["content"]
+            assert "Lightroom" in prompt_text
+            assert "Photoshop" in prompt_text
+            assert "Camera RAW" in prompt_text

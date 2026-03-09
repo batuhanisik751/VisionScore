@@ -11,7 +11,7 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 - **Aesthetic Scoring** -- NIMA (MobileNetV2) trained on AVA dataset
 - **Composition Analysis** -- Rule of thirds, subject position, horizon, balance via spectral residual saliency
 - **AI Feedback** -- Ollama + LLaVA for natural language critique with structured JSON output
-- **Improvement Suggestions** -- Structured edit suggestions (crop, exposure, contrast, etc.) with crop preview generation
+- **Improvement Suggestions** -- Quantified edit suggestions with tool-specific values (Lightroom sliders, Unsharp Mask params, Kelvin/Tint WB, directional reframe guidance) and crop previews
 - **Score Aggregation** -- Weighted scoring with configurable weights, grades S/A/B/C/D/F
 - **Comparison & Batch** -- Side-by-side image comparison, directory batch analysis with CSV export
 - **Gallery Mode** -- Generate standalone HTML gallery from batch results with POTD hero and rankings
