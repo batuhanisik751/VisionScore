@@ -48,6 +48,7 @@ export interface AnalysisReport {
     score: number;
     reasoning: string;
   } | null;
+  plugin_results?: Record<string, Record<string, unknown>>;
   overall_score: number;
   grade: string;
   analysis_time_seconds: number;

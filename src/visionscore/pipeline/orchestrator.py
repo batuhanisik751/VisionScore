@@ -19,6 +19,21 @@ class AnalysisOrchestrator:
         self._settings = settings or Settings()
         self._skip_ai = skip_ai
         self.warnings: list[str] = []
+        self._plugin_registry = self._load_plugins()
+
+    def _load_plugins(self):  # noqa: ANN202
+        from visionscore.plugins.registry import PluginRegistry
+
+        registry = PluginRegistry()
+        registry.discover_entry_points()
+        plugin_dir = self._settings.plugin_dir
+        if plugin_dir and plugin_dir.is_dir():
+            registry.discover_directory(plugin_dir)
+        if self._settings.enable_bundled_plugins:
+            from visionscore.plugins import register_bundled_plugins
+
+            register_bundled_plugins(registry)
+        return registry
 
     def run(self, image_path: Path) -> AnalysisReport:
         self.warnings = []
@@ -81,6 +96,19 @@ class AnalysisOrchestrator:
         else:
             self.warnings.append("AI feedback skipped: --skip-ai flag set.")
 
+        # Plugin analyzers
+        plugin_results: dict[str, object] = {}
+        plugin_weights: dict[str, tuple[float, str]] = {}
+        for info, analyzer_cls in self._plugin_registry.get_all():
+            try:
+                analyzer = analyzer_cls()
+                result = analyzer.analyze(image, metadata=meta)
+                plugin_results[info.name] = result.model_dump()
+                if info.score_weight > 0:
+                    plugin_weights[info.name] = (info.score_weight, info.score_field)
+            except Exception as e:
+                self.warnings.append(f"Plugin '{info.display_name}' error: {e}")
+
         # Build report
         report = AnalysisReport(
             image_meta=meta,
@@ -88,11 +116,12 @@ class AnalysisOrchestrator:
             aesthetic=aesthetic,
             composition=composition,
             ai_feedback=ai_feedback,
+            plugin_results=plugin_results,
         )
 
         # Aggregate and grade
         aggregator = ScoreAggregator(weights=self._settings.analysis_weights)
-        report.overall_score = aggregator.aggregate(report)
+        report.overall_score = aggregator.aggregate(report, plugin_weights=plugin_weights)
         report.grade = assign_grade(report.overall_score)
         report.analysis_time_seconds = round(time.perf_counter() - start, 3)
 

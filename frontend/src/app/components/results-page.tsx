@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Clock,
   Trash2,
+  Plug,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
@@ -416,6 +417,40 @@ export function ResultsPage({ saved }: ResultsPageProps) {
             subScores={[{ label: "AI Score", value: report.ai_feedback.score }]}
           />
         )}
+        {report.plugin_results && Object.entries(report.plugin_results).map(([name, data]) => {
+          const overall = typeof data.overall === "number" ? data.overall : typeof data.score === "number" ? data.score : null;
+          const subScores = Object.entries(data)
+            .filter(([k, v]) => typeof v === "number" && k !== "overall")
+            .map(([k, v]) => ({ label: k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()), value: v as number }));
+          const issues = Array.isArray(data.issues) ? data.issues as string[] : [];
+          const stringFields = Object.entries(data)
+            .filter(([, v]) => typeof v === "string" && v !== "")
+            .map(([k, v]) => [k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()), v as string] as const);
+          const displayName = name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          const hasExtra = issues.length > 0 || stringFields.length > 0;
+          return (
+            <CategoryCard
+              key={name}
+              title={displayName}
+              overall={overall}
+              icon={<Plug className="w-5 h-5 text-indigo-400" />}
+              subScores={subScores}
+              extra={hasExtra ? (
+                <div className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3">
+                  {stringFields.map(([label, val]) => (
+                    <div key={label} className="flex justify-between text-xs">
+                      <span className="text-gray-500">{label}</span>
+                      <span className="text-gray-300">{val}</span>
+                    </div>
+                  ))}
+                  {issues.map((issue, i) => (
+                    <p key={i} className="text-xs text-yellow-400/80">- {issue}</p>
+                  ))}
+                </div>
+              ) : undefined}
+            />
+          );
+        })}
       </div>
 
       {/* AI Feedback & Metadata */}

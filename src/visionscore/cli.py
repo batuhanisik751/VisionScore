@@ -313,3 +313,36 @@ def train(
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+
+
+@app.command("plugins")
+def list_plugins():
+    """List registered analyzer plugins."""
+    from visionscore.config import Settings
+    from visionscore.plugins import register_bundled_plugins
+    from visionscore.plugins.registry import PluginRegistry
+
+    settings = Settings()
+    registry = PluginRegistry()
+    registry.discover_entry_points()
+    if settings.plugin_dir and settings.plugin_dir.is_dir():
+        registry.discover_directory(settings.plugin_dir)
+    if settings.enable_bundled_plugins:
+        register_bundled_plugins(registry)
+
+    all_plugins = registry.get_all()
+    if not all_plugins:
+        console.print("[dim]No plugins registered.[/dim]")
+        return
+
+    table = Table(title="Registered Plugins")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Weight", justify="right")
+    table.add_column("Description")
+
+    for info, _cls in all_plugins:
+        weight_str = f"{info.score_weight:.2f}" if info.score_weight > 0 else "[dim]none[/dim]"
+        table.add_row(info.display_name, info.version, weight_str, info.description)
+
+    console.print(table)

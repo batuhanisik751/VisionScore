@@ -112,3 +112,40 @@ class TestScoreAggregator:
         )
         agg = ScoreAggregator()
         assert agg.aggregate(report) == 100.0
+
+    def test_plugin_weight_contributes_to_score(self) -> None:
+        report = AnalysisReport(
+            image_meta=_meta(),
+            technical=_tech(70),
+            plugin_results={"my_plugin": {"overall": 100.0}},
+        )
+        agg = ScoreAggregator()
+        score_without = agg.aggregate(report)
+        score_with = agg.aggregate(report, plugin_weights={"my_plugin": (0.15, "overall")})
+        # Plugin contributes 100 with weight 0.15 vs only tech at 70 --
+        # overall should shift upward.
+        assert score_with > score_without
+
+    def test_plugin_weight_zero_ignored(self) -> None:
+        report = AnalysisReport(
+            image_meta=_meta(),
+            technical=_tech(70),
+            plugin_results={"my_plugin": {"overall": 100.0}},
+        )
+        agg = ScoreAggregator()
+        score_base = agg.aggregate(report)
+        score_zero = agg.aggregate(report, plugin_weights={"my_plugin": (0.0, "overall")})
+        assert score_base == score_zero
+
+    def test_plugin_missing_from_results_ignored(self) -> None:
+        report = AnalysisReport(
+            image_meta=_meta(),
+            technical=_tech(70),
+            plugin_results={},
+        )
+        agg = ScoreAggregator()
+        score_base = agg.aggregate(report)
+        score_missing = agg.aggregate(
+            report, plugin_weights={"nonexistent": (0.15, "overall")}
+        )
+        assert score_base == score_missing

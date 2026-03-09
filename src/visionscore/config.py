@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,5 +40,27 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     custom_model_path: Path | None = None
+    plugin_dir: Path = Path.home() / ".visionscore" / "plugins"
+    enable_bundled_plugins: bool = False
     analysis_weights: AnalysisWeights = AnalysisWeights()
     thresholds: Thresholds = Thresholds()
+
+    @field_validator("model_dir", "plugin_dir", mode="before")
+    @classmethod
+    def _expand_path(cls, v: object) -> object:
+        if isinstance(v, str):
+            return Path(v).expanduser()
+        if isinstance(v, Path):
+            return v.expanduser()
+        return v
+
+    @field_validator("custom_model_path", mode="before")
+    @classmethod
+    def _expand_optional_path(cls, v: object) -> object:
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            return None
+        if isinstance(v, str):
+            return Path(v).expanduser()
+        if isinstance(v, Path):
+            return v.expanduser()
+        return v

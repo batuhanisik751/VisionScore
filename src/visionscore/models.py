@@ -68,6 +68,7 @@ class AnalysisReport(BaseModel):
     aesthetic: AestheticScore | None = None
     composition: CompositionScore | None = None
     ai_feedback: AIFeedback | None = None
+    plugin_results: dict[str, Any] = Field(default_factory=dict)
     overall_score: float = Field(ge=0, le=100, default=0)
     grade: Grade = Grade.F
     timestamp: datetime = Field(default_factory=datetime.now)

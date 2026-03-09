@@ -18,7 +18,11 @@ class ScoreAggregator:
     def __init__(self, weights: AnalysisWeights | None = None) -> None:
         self._weights = weights or AnalysisWeights()
 
-    def aggregate(self, report: AnalysisReport) -> float:
+    def aggregate(
+        self,
+        report: AnalysisReport,
+        plugin_weights: dict[str, tuple[float, str]] | None = None,
+    ) -> float:
         active: list[tuple[float, float]] = []
         weight_map = self._weights.model_dump()
 
@@ -28,6 +32,18 @@ class ScoreAggregator:
                 continue
             score = getattr(component, field)
             active.append((weight_map[key], score))
+
+        # Plugin contributions
+        if plugin_weights:
+            for plugin_name, (weight, score_field) in plugin_weights.items():
+                if weight <= 0.0:
+                    continue
+                plugin_data = report.plugin_results.get(plugin_name)
+                if not isinstance(plugin_data, dict):
+                    continue
+                score = plugin_data.get(score_field, 0.0)
+                if isinstance(score, (int, float)):
+                    active.append((weight, float(score)))
 
         if not active:
             return 0.0

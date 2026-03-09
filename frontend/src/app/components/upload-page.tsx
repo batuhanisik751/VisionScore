@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { isAcceptedImage, createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
 
 export function UploadPage() {
   const navigate = useNavigate();
@@ -14,11 +15,10 @@ export function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback((f: File) => {
-    if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) return;
-    if (f.size > 20 * 1024 * 1024) return;
+  const handleFile = useCallback(async (f: File) => {
+    if (!isAcceptedImage(f)) return;
     setFile(f);
-    const url = URL.createObjectURL(f);
+    const url = await createPreviewUrl(f);
     setPreview(url);
   }, []);
 
@@ -115,7 +115,7 @@ export function UploadPage() {
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept={ACCEPT_ATTR}
               className="hidden"
               onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
             />
@@ -125,7 +125,7 @@ export function UploadPage() {
               </div>
               <div>
                 <p className="text-white mb-1">Drop your image here or click to browse</p>
-                <p className="text-xs text-gray-500">JPEG, PNG, or WebP • Max 20MB</p>
+                <p className="text-xs text-gray-500">JPEG, PNG, WebP, or HEIC • Max 20MB</p>
               </div>
             </div>
           </div>

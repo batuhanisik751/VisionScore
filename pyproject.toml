@@ -21,6 +21,7 @@ dependencies = [
     "supabase>=2.0",
     "torch>=2.0",
     "torchvision>=0.15",
+    "pillow-heif>=0.13",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,9 @@ api = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6", "httpx>=0.2
 
 [project.scripts]
 visionscore = "visionscore.cli:app"
+
+[project.entry-points."visionscore.analyzers"]
+instagram_readiness = "visionscore.plugins.instagram:InstagramReadinessAnalyzer"
 
 [tool.setuptools.packages.find]
 where = ["src"]

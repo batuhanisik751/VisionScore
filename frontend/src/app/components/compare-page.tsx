@@ -4,6 +4,7 @@ import { ScoreRadarChart } from "./score-radar-chart";
 import { ImageOverlay } from "./image-overlay";
 import { ScoreBadge } from "./score-badge";
 import { getGradeColor, getGradeBg, type AnalysisReport } from "./mock-data";
+import { createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
 
 interface CompareSlot {
   report: AnalysisReport | null;
@@ -24,7 +25,7 @@ interface SavedRow {
 
 const emptySlot: CompareSlot = { report: null, imageUrl: null, file: null, loading: false, error: null };
 
-const ACCEPTED = ".jpg,.jpeg,.png,.webp";
+const ACCEPTED = ACCEPT_ATTR;
 
 export function ComparePage() {
   const [slotA, setSlotA] = useState<CompareSlot>(emptySlot);
@@ -44,7 +45,7 @@ export function ComparePage() {
   }, []);
 
   const analyzeFile = useCallback(async (file: File, setSlot: (s: CompareSlot) => void) => {
-    const imageUrl = URL.createObjectURL(file);
+    const imageUrl = await createPreviewUrl(file);
     setSlot({ report: null, imageUrl, file, loading: true, error: null });
 
     try {

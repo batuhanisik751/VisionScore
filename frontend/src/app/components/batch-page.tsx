@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { ScoreBadge } from "./score-badge";
 import { getGradeColor, getGradeBg, getScoreBarClass, type AnalysisReport } from "./mock-data";
+import { isAcceptedImage, createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
 
 interface BatchImageResult {
   filename: string;
@@ -65,12 +66,8 @@ export function BatchPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
-
-  const handleFiles = useCallback((newFiles: FileList | File[]) => {
-    const valid = Array.from(newFiles).filter(
-      (f) => ACCEPTED.includes(f.type) && f.size <= 20 * 1024 * 1024
-    );
+  const handleFiles = useCallback(async (newFiles: FileList | File[]) => {
+    const valid = Array.from(newFiles).filter((f) => isAcceptedImage(f));
     if (valid.length === 0) return;
 
     setFiles((prev) => {
@@ -80,11 +77,11 @@ export function BatchPage() {
     });
 
     const newPreviews = new Map(previews);
-    valid.forEach((f) => {
+    for (const f of valid) {
       if (!newPreviews.has(f.name)) {
-        newPreviews.set(f.name, URL.createObjectURL(f));
+        newPreviews.set(f.name, await createPreviewUrl(f));
       }
-    });
+    }
     setPreviews(newPreviews);
   }, [previews]);
 
@@ -369,7 +366,7 @@ export function BatchPage() {
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept={ACCEPT_ATTR}
               multiple
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
@@ -380,7 +377,7 @@ export function BatchPage() {
               </div>
               <div>
                 <p className="text-white mb-1">Drop images here or click to browse</p>
-                <p className="text-xs text-gray-500">JPEG, PNG, or WebP • Max 20MB each • Select multiple</p>
+                <p className="text-xs text-gray-500">JPEG, PNG, WebP, or HEIC • Max 20MB each • Select multiple</p>
               </div>
             </div>
           </div>
