@@ -42,49 +42,71 @@ export function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [gradeFilter, setGradeFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const PAGE_SIZE = 20;
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [batches, setBatches] = useState<BatchGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteBatchId, setDeleteBatchId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [totalReports, setTotalReports] = useState(0);
+  const hasMore = offset + PAGE_SIZE < totalReports;
 
   useEffect(() => {
-    fetchData();
+    fetchData(0);
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (fromOffset: number) => {
+    const isInitial = fromOffset === 0;
+    if (isInitial) setLoading(true);
+    else setLoadingMore(true);
     setError(null);
     try {
-      // Try with report_type filter first; fall back to unfiltered if the
-      // column doesn't exist yet (migration not applied).
-      let reportsRes = await fetch("/api/v1/reports?limit=100&report_type=single");
+      let reportsRes = await fetch(`/api/v1/reports?limit=${PAGE_SIZE}&offset=${fromOffset}&report_type=single`);
       if (!reportsRes.ok) {
-        reportsRes = await fetch("/api/v1/reports?limit=100");
+        reportsRes = await fetch(`/api/v1/reports?limit=${PAGE_SIZE}&offset=${fromOffset}`);
       }
       if (!reportsRes.ok) {
         const body = await reportsRes.json().catch(() => null);
         throw new Error(body?.detail || `Failed to load reports (${reportsRes.status})`);
       }
       const reportsData = await reportsRes.json();
-      setReports(reportsData.reports.map((r: DbRow) => rowToReport(r)));
+      const newReports = (reportsData.reports || []).map((r: DbRow) => rowToReport(r));
+      setTotalReports(reportsData.total ?? newReports.length);
+      setOffset(fromOffset);
 
-      // Batch groups — silently ignore if endpoint isn't available
-      try {
-        const batchesRes = await fetch("/api/v1/reports/batches");
-        if (batchesRes.ok) {
-          const batchesData = await batchesRes.json();
-          setBatches(batchesData.batches || []);
+      if (isInitial) {
+        setReports(newReports);
+      } else {
+        setReports((prev) => [...prev, ...newReports]);
+      }
+
+      // Batch groups — only fetch on initial load
+      if (isInitial) {
+        try {
+          const batchesRes = await fetch("/api/v1/reports/batches");
+          if (batchesRes.ok) {
+            const batchesData = await batchesRes.json();
+            setBatches(batchesData.batches || []);
+          }
+        } catch {
+          // batches endpoint not available — that's fine
         }
-      } catch {
-        // batches endpoint not available — that's fine
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load reports");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const loadMore = () => {
+    if (!loadingMore && hasMore) {
+      fetchData(offset + PAGE_SIZE);
     }
   };
 
@@ -119,6 +141,7 @@ export function HistoryPage() {
         throw new Error(body?.detail || `Delete failed (${res.status})`);
       }
       setReports((prev) => prev.filter((r) => r.id !== id));
+      setTotalReports((prev) => Math.max(0, prev - 1));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -149,7 +172,7 @@ export function HistoryPage() {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
-  const totalCount = reports.length + batches.length;
+  const totalCount = totalReports + batches.length;
   const showImages = typeFilter === "all" || typeFilter === "images";
   const showBatches = typeFilter === "all" || typeFilter === "batches";
   const hasContent = (showImages && filtered.length > 0) || (showBatches && filteredBatches.length > 0);
@@ -322,6 +345,26 @@ export function HistoryPage() {
                   formatDate={formatDate}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Load More */}
+          {hasMore && (
+            <div className="flex flex-col items-center gap-2 mt-8">
+              <p className="text-xs text-gray-500">
+                Showing {reports.length} of {totalReports} reports
+              </p>
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08] transition-colors disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>
+                ) : (
+                  "Load More"
+                )}
+              </button>
             </div>
           )}
         </>

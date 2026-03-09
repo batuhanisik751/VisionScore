@@ -93,21 +93,20 @@ def test_download_image_failure():
             _download_image("https://example.com/missing.jpg")
 
 
-# --- HEIC/HEIF support tests ---
+# --- HEIC/HEIF removed ---
 
 
-def test_heic_in_supported_extensions():
-    assert ".heic" in SUPPORTED_EXTENSIONS
+def test_heic_not_in_supported_extensions():
+    assert ".heic" not in SUPPORTED_EXTENSIONS
 
 
-def test_heif_in_supported_extensions():
-    assert ".heif" in SUPPORTED_EXTENSIONS
+def test_heif_not_in_supported_extensions():
+    assert ".heif" not in SUPPORTED_EXTENSIONS
 
 
-def test_heic_extension_not_rejected(tmp_path: Path):
-    """Verify .heic files pass the extension check (not rejected as unsupported)."""
+def test_heic_extension_rejected(tmp_path: Path):
+    """Verify .heic files are rejected as unsupported."""
     heic_file = tmp_path / "photo.heic"
     heic_file.write_bytes(b"\x00" * 16)
-    # Should fail at image decode, NOT at extension validation
-    with pytest.raises(ValueError, match="Could not load image"):
+    with pytest.raises(ValueError, match="Unsupported format"):
         load_image(heic_file)

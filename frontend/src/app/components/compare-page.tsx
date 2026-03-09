@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { Upload, ArrowUp, ArrowDown, Minus, Loader2, X, ChevronDown } from "lucide-react";
+import { Upload, ArrowUp, ArrowDown, Minus, Loader2, X, ChevronDown, Eye, EyeOff, Settings2 } from "lucide-react";
 import { ScoreRadarChart } from "./score-radar-chart";
 import { ImageOverlay } from "./image-overlay";
 import { ScoreBadge } from "./score-badge";
 import { getGradeColor, getGradeBg, type AnalysisReport } from "./mock-data";
-import { createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
+import { ACCEPT_ATTR } from "./image-utils";
 
 interface CompareSlot {
   report: AnalysisReport | null;
@@ -32,6 +32,22 @@ export function ComparePage() {
   const [slotB, setSlotB] = useState<CompareSlot>(emptySlot);
   const [savedReports, setSavedReports] = useState<SavedRow[]>([]);
   const [showSavedPicker, setShowSavedPicker] = useState<"A" | "B" | null>(null);
+  const [skipAI, setSkipAI] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
+
+  const updateWeight = (key: keyof typeof weights, value: number) => {
+    const others = Object.keys(weights).filter((k) => k !== key) as (keyof typeof weights)[];
+    const remaining = 100 - value;
+    const currentOthersSum = others.reduce((s, k) => s + weights[k], 0);
+    const newWeights = { ...weights, [key]: value };
+    others.forEach((k) => {
+      newWeights[k] = currentOthersSum > 0 ? Math.round((weights[k] / currentOthersSum) * remaining) : Math.round(remaining / 3);
+    });
+    const sum = Object.values(newWeights).reduce((a, b) => a + b, 0);
+    if (sum !== 100) newWeights[others[0]] += 100 - sum;
+    setWeights(newWeights);
+  };
 
   // Fetch saved reports for the picker
   useEffect(() => {
@@ -45,13 +61,18 @@ export function ComparePage() {
   }, []);
 
   const analyzeFile = useCallback(async (file: File, setSlot: (s: CompareSlot) => void) => {
-    const imageUrl = await createPreviewUrl(file);
+    const imageUrl = URL.createObjectURL(file);
     setSlot({ report: null, imageUrl, file, loading: true, error: null });
 
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/v1/analyze", { method: "POST", body: formData });
+
+      const params = new URLSearchParams();
+      if (skipAI) params.set("skip_ai", "true");
+      params.set("weights", `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`);
+
+      const res = await fetch(`/api/v1/analyze?${params}`, { method: "POST", body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail || `Analysis failed (${res.status})`);
@@ -59,9 +80,10 @@ export function ComparePage() {
       const data = await res.json();
       setSlot({ report: { ...data.report, image_url: imageUrl }, imageUrl, file, loading: false, error: null });
     } catch (err) {
-      setSlot((prev) => ({ ...prev, loading: false, error: err instanceof Error ? err.message : "Analysis failed" }));
+      const msg = err instanceof Error ? err.message : "Analysis failed";
+      setSlot({ report: null, imageUrl, file, loading: false, error: msg });
     }
-  }, []);
+  }, [skipAI, weights]);
 
   const handleDrop = useCallback((e: React.DragEvent, setSlot: (s: CompareSlot) => void) => {
     e.preventDefault();
@@ -92,6 +114,59 @@ export function ComparePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <h1 className="text-xl text-white mb-6" style={{ fontWeight: 700 }}>Compare Images</h1>
+
+      {/* Analysis settings */}
+      <div className="mb-6 max-w-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+            <button
+              onClick={() => setSkipAI(!skipAI)}
+              className={`w-9 h-5 rounded-full transition-colors relative ${skipAI ? "bg-blue-500" : "bg-white/10"}`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${skipAI ? "left-[18px]" : "left-0.5"}`}
+              />
+            </button>
+            {skipAI ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            Skip AI Feedback
+          </label>
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            Weights
+          </button>
+        </div>
+
+        {showAdvanced && (
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-3">
+            {(
+              [
+                { key: "technical" as const, label: "Technical" },
+                { key: "aesthetic" as const, label: "Aesthetic" },
+                { key: "composition" as const, label: "Composition" },
+                { key: "ai" as const, label: "AI Feedback" },
+              ] as const
+            ).map(({ key, label }) => (
+              <div key={key}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-400">{label}</span>
+                  <span className="text-gray-300 tabular-nums">{weights[key]}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={weights[key]}
+                  onChange={(e) => updateWeight(key, Number(e.target.value))}
+                  className="w-full accent-blue-500 h-1"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Upload zones */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

@@ -15,10 +15,11 @@ import {
   Clock,
   Trash2,
   Plug,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check, X } from "lucide-react";
 import { ScoreRadarChart } from "./score-radar-chart";
 import { ImageOverlay } from "./image-overlay";
 
@@ -59,6 +60,9 @@ export function ResultsPage({ saved }: ResultsPageProps) {
   const report: AnalysisReport | undefined = state?.report
     ? { ...state.report, id: "live", image_url: state.imageUrl || "" }
     : fetchedReport || MOCK_REPORTS.find((r) => r.id === id) || undefined;
+
+  const warnings = state?.warnings ?? [];
+  const [showWarnings, setShowWarnings] = useState(true);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -282,6 +286,33 @@ export function ResultsPage({ saved }: ResultsPageProps) {
           Analyzed in {report.analysis_time_seconds}s
         </div>
       </div>
+
+      {/* Warnings banner */}
+      {warnings.length > 0 && showWarnings && (
+        <div className="mb-6 rounded-lg bg-yellow-500/10 border border-yellow-500/20 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-yellow-400" style={{ fontWeight: 500 }}>
+                  {warnings.length} warning{warnings.length !== 1 && "s"} during analysis
+                </span>
+                <button
+                  onClick={() => setShowWarnings(false)}
+                  className="text-yellow-400/60 hover:text-yellow-400 transition-colors ml-2"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <ul className="mt-1.5 space-y-0.5">
+                {warnings.map((w, i) => (
+                  <li key={i} className="text-xs text-yellow-400/80">{w}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hero section with image and overall score */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">

@@ -21,7 +21,6 @@ dependencies = [
     "supabase>=2.0",
     "torch>=2.0",
     "torchvision>=0.15",
-    "pillow-heif>=0.13",
 ]
 
 [project.optional-dependencies]

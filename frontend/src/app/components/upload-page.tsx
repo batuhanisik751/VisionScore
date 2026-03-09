@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { isAcceptedImage, createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
+import { isAcceptedImage, ACCEPT_ATTR } from "./image-utils";
 
 export function UploadPage() {
   const navigate = useNavigate();
@@ -15,11 +15,10 @@ export function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(async (f: File) => {
+  const handleFile = useCallback((f: File) => {
     if (!isAcceptedImage(f)) return;
     setFile(f);
-    const url = await createPreviewUrl(f);
-    setPreview(url);
+    setPreview(URL.createObjectURL(f));
   }, []);
 
   const handleDrop = useCallback(

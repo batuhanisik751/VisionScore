@@ -7,7 +7,6 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 
 ## Features
 
-- **HEIC/HEIF Support** -- Analyze Apple HEIC photos directly (requires `pillow-heif`)
 - **Technical Quality** -- Sharpness, exposure, noise, dynamic range
 - **Aesthetic Scoring** -- NIMA (MobileNetV2) trained on AVA dataset
 - **Composition Analysis** -- Rule of thirds, subject position, horizon, balance

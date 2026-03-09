@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { ScoreBadge } from "./score-badge";
 import { getGradeColor, getGradeBg, getScoreBarClass, type AnalysisReport } from "./mock-data";
-import { isAcceptedImage, createPreviewUrl, ACCEPT_ATTR } from "./image-utils";
+import { isAcceptedImage, ACCEPT_ATTR } from "./image-utils";
 
 interface BatchImageResult {
   filename: string;
@@ -66,7 +66,7 @@ export function BatchPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = useCallback(async (newFiles: FileList | File[]) => {
+  const handleFiles = useCallback((newFiles: FileList | File[]) => {
     const valid = Array.from(newFiles).filter((f) => isAcceptedImage(f));
     if (valid.length === 0) return;
 
@@ -79,7 +79,7 @@ export function BatchPage() {
     const newPreviews = new Map(previews);
     for (const f of valid) {
       if (!newPreviews.has(f.name)) {
-        newPreviews.set(f.name, await createPreviewUrl(f));
+        newPreviews.set(f.name, URL.createObjectURL(f));
       }
     }
     setPreviews(newPreviews);
@@ -377,7 +377,7 @@ export function BatchPage() {
               </div>
               <div>
                 <p className="text-white mb-1">Drop images here or click to browse</p>
-                <p className="text-xs text-gray-500">JPEG, PNG, WebP, or HEIC • Max 20MB each • Select multiple</p>
+                <p className="text-xs text-gray-500">JPEG, PNG, or WebP • Max 20MB each • Select multiple</p>
               </div>
             </div>
           </div>
