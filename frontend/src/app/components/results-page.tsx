@@ -2,6 +2,7 @@ import { useParams, useNavigate, useLocation } from "react-router";
 import { ScoreBadge } from "./score-badge";
 import { CategoryCard } from "./category-card";
 import { FeedbackSection } from "./feedback-section";
+import { SuggestionsSection } from "./suggestions-section";
 import { MetadataPanel } from "./metadata-panel";
 import { MOCK_REPORTS, getGradeBg, getGradeColor, type AnalysisReport } from "./mock-data";
 import {
@@ -257,6 +258,21 @@ export function ResultsPage({ saved }: ResultsPageProps) {
       addLine(report.ai_feedback.reasoning, 9);
     }
 
+    // Improvement Suggestions
+    if (report.suggestions && report.suggestions.suggestions.length > 0) {
+      y += 4;
+      addLine("Improvement Suggestions", 12, "bold");
+      if (report.suggestions.summary) {
+        addLine(report.suggestions.summary, 9);
+        y += 1;
+      }
+      report.suggestions.suggestions.forEach((s, i) => {
+        const priority = s.priority <= 2 ? "[HIGH]" : s.priority <= 3 ? "[MED]" : "[LOW]";
+        const type = s.type.charAt(0).toUpperCase() + s.type.slice(1);
+        addLine(`  ${i + 1}. ${priority} ${type}: ${s.instruction}`);
+      });
+    }
+
     // EXIF
     const exif = report.image_meta?.exif;
     if (exif) {
@@ -484,6 +500,20 @@ export function ResultsPage({ saved }: ResultsPageProps) {
           );
         })}
       </div>
+
+      {/* Improvement Suggestions */}
+      {report.suggestions && report.suggestions.suggestions.length > 0 && (
+        <div className="mb-6">
+          <SuggestionsSection
+            suggestions={report.suggestions}
+            cropPreviewUrl={
+              report.suggestions.crop_preview_path
+                ? report.suggestions.crop_preview_path
+                : undefined
+            }
+          />
+        </div>
+      )}
 
       {/* AI Feedback & Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

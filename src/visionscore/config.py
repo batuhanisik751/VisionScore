@@ -20,6 +20,16 @@ class Thresholds(BaseModel):
     exposure_high: int = 220
 
 
+class SuggestionThresholds(BaseModel):
+    crop_trigger: float = 60.0
+    exposure_trigger: float = 60.0
+    contrast_trigger: float = 50.0
+    sharpness_trigger: float = 50.0
+    horizon_trigger: float = 70.0
+    balance_trigger: float = 40.0
+    max_suggestions: int = 5
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -44,6 +54,7 @@ class Settings(BaseSettings):
     enable_bundled_plugins: bool = False
     analysis_weights: AnalysisWeights = AnalysisWeights()
     thresholds: Thresholds = Thresholds()
+    suggestion_thresholds: SuggestionThresholds = SuggestionThresholds()
 
     @field_validator("model_dir", "plugin_dir", mode="before")
     @classmethod

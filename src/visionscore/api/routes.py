@@ -105,6 +105,7 @@ async def _run_analysis(
     request: Request,
     skip_ai: bool,
     weights: str | None,
+    skip_suggestions: bool = False,
 ) -> tuple:
     """Write content to temp file, run orchestrator, return (report, warnings)."""
     from visionscore.config import AnalysisWeights
@@ -139,7 +140,9 @@ async def _run_analysis(
         tmp_path = Path(tmp.name)
 
     try:
-        orchestrator = AnalysisOrchestrator(settings=settings, skip_ai=skip_ai)
+        orchestrator = AnalysisOrchestrator(
+            settings=settings, skip_ai=skip_ai, skip_suggestions=skip_suggestions
+        )
         report = await asyncio.to_thread(orchestrator.run, tmp_path)
         return report, orchestrator.warnings
     finally:
@@ -180,6 +183,7 @@ async def analyze_image(
     request: Request,
     file: UploadFile = File(...),
     skip_ai: bool = Query(False, description="Skip AI feedback analysis"),
+    skip_suggestions: bool = Query(False, description="Skip improvement suggestions"),
     weights: str | None = Query(
         None,
         description="Custom weights t:a:c:f (e.g. 25:30:25:20)",
@@ -189,7 +193,9 @@ async def analyze_image(
     """Upload an image and receive a full quality analysis report."""
     suffix = _validate_extension(file.filename)
     content = await _read_upload(file)
-    report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights)
+    report, warnings = await _run_analysis(
+        content, suffix, request, skip_ai, weights, skip_suggestions
+    )
     return AnalyzeResponse(report=report, warnings=warnings)
 
 
@@ -223,6 +229,7 @@ async def analyze_and_save(
     request: Request,
     file: UploadFile = File(...),
     skip_ai: bool = Query(False, description="Skip AI feedback analysis"),
+    skip_suggestions: bool = Query(False, description="Skip improvement suggestions"),
     weights: str | None = Query(
         None,
         description="Custom weights t:a:c:f (e.g. 25:30:25:20)",
@@ -233,7 +240,9 @@ async def analyze_and_save(
     """Upload an image, run analysis, store image and report in Supabase."""
     suffix = _validate_extension(file.filename)
     content = await _read_upload(file)
-    report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights)
+    report, warnings = await _run_analysis(
+        content, suffix, request, skip_ai, weights, skip_suggestions
+    )
 
     image_url = await db.upload_image(content, file.filename or "image.jpg")
     if image_url is None:

@@ -15,9 +15,15 @@ from visionscore.scoring.grading import assign_grade
 class AnalysisOrchestrator:
     """Coordinate the full analysis pipeline from image path to completed report."""
 
-    def __init__(self, settings: Settings | None = None, skip_ai: bool = False) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        skip_ai: bool = False,
+        skip_suggestions: bool = False,
+    ) -> None:
         self._settings = settings or Settings()
         self._skip_ai = skip_ai
+        self._skip_suggestions = skip_suggestions
         self.warnings: list[str] = []
         self._plugin_registry = self._load_plugins()
 
@@ -96,6 +102,25 @@ class AnalysisOrchestrator:
         else:
             self.warnings.append("AI feedback skipped: --skip-ai flag set.")
 
+        # Improvement suggestions (optional)
+        suggestions = None
+        if not self._skip_suggestions:
+            try:
+                from visionscore.analyzers.suggestions import SuggestionsAnalyzer
+
+                suggestions_analyzer = SuggestionsAnalyzer(
+                    technical=technical,
+                    composition=composition,
+                    ai_feedback=ai_feedback,
+                    output_dir=image_path.parent,
+                    ollama_host=self._settings.ollama_host if not self._skip_ai else None,
+                    ollama_model=self._settings.ollama_model,
+                    thresholds=self._settings.suggestion_thresholds,
+                )
+                suggestions = suggestions_analyzer.analyze(image, metadata=meta)
+            except Exception as e:
+                self.warnings.append(f"Suggestions error: {e}")
+
         # Plugin analyzers
         plugin_results: dict[str, object] = {}
         plugin_weights: dict[str, tuple[float, str]] = {}
@@ -116,6 +141,7 @@ class AnalysisOrchestrator:
             aesthetic=aesthetic,
             composition=composition,
             ai_feedback=ai_feedback,
+            suggestions=suggestions,
             plugin_results=plugin_results,
         )
 

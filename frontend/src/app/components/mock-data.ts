@@ -48,6 +48,25 @@ export interface AnalysisReport {
     score: number;
     reasoning: string;
   } | null;
+  suggestions: {
+    suggestions: {
+      type: "crop" | "exposure" | "color" | "contrast" | "sharpness" | "horizon" | "composition";
+      instruction: string;
+      priority: number;
+      parameters: Record<string, unknown>;
+      crop_details?: {
+        aspect_ratio: string;
+        shift_x_pct: number;
+        shift_y_pct: number;
+        target_x: number;
+        target_y: number;
+        target_w: number;
+        target_h: number;
+      } | null;
+    }[];
+    crop_preview_path: string | null;
+    summary: string;
+  } | null;
   plugin_results?: Record<string, Record<string, unknown>>;
   overall_score: number;
   grade: string;
@@ -85,6 +104,7 @@ export const MOCK_REPORTS: AnalysisReport[] = [
       score: 78.0,
       reasoning: "Strong natural lighting and composition with minor technical issues in horizon leveling.",
     },
+    suggestions: null,
     overall_score: 78.3,
     grade: "B",
     analysis_time_seconds: 3.2,
@@ -120,6 +140,7 @@ export const MOCK_REPORTS: AnalysisReport[] = [
       score: 90.0,
       reasoning: "Outstanding technical execution with compelling composition. Near-professional quality.",
     },
+    suggestions: null,
     overall_score: 90.4,
     grade: "A",
     analysis_time_seconds: 2.8,
@@ -154,6 +175,15 @@ export const MOCK_REPORTS: AnalysisReport[] = [
       mood: "Atmospheric",
       score: 62.0,
       reasoning: "Creative composition but hampered by high ISO noise and slight softness from handheld shooting.",
+    },
+    suggestions: {
+      suggestions: [
+        { type: "sharpness", instruction: "Apply moderate sharpening -- the image appears soft", priority: 2, parameters: { sharpness_score: 28.5, recommended_amount: "moderate" } },
+        { type: "exposure", instruction: "Increase exposure by +1.0 stops", priority: 2, parameters: { stops: 1.0, direction: "increase" } },
+        { type: "contrast", instruction: "Increase contrast -- the image uses only ~62% of the available tonal range", priority: 3, parameters: { tonal_utilization_pct: 62 } },
+      ],
+      crop_preview_path: null,
+      summary: "Focus on: sharpness, exposure for the biggest improvement",
     },
     overall_score: 68.1,
     grade: "C",
@@ -190,6 +220,7 @@ export const MOCK_REPORTS: AnalysisReport[] = [
       score: 95.0,
       reasoning: "Exceptional portrait with professional lighting, razor-sharp focus, and masterful depth of field control.",
     },
+    suggestions: null,
     overall_score: 95.2,
     grade: "S",
     analysis_time_seconds: 2.5,

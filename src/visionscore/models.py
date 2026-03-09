@@ -53,6 +53,46 @@ class AIFeedback(BaseModel):
     reasoning: str = ""
 
 
+class SuggestionType(str, Enum):
+    CROP = "crop"
+    EXPOSURE = "exposure"
+    COLOR = "color"
+    CONTRAST = "contrast"
+    SHARPNESS = "sharpness"
+    HORIZON = "horizon"
+    COMPOSITION = "composition"
+
+
+class CropSuggestion(BaseModel):
+    """Structured crop recommendation with exact coordinates."""
+
+    aspect_ratio: str = ""
+    shift_x_pct: float = 0.0
+    shift_y_pct: float = 0.0
+    target_x: int = 0
+    target_y: int = 0
+    target_w: int = 0
+    target_h: int = 0
+
+
+class ImprovementSuggestion(BaseModel):
+    """A single actionable photo edit suggestion."""
+
+    type: SuggestionType
+    instruction: str = ""
+    priority: int = Field(ge=1, le=5, default=3)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    crop_details: CropSuggestion | None = None
+
+
+class SuggestionsResult(BaseModel):
+    """Output of the SuggestionsAnalyzer."""
+
+    suggestions: list[ImprovementSuggestion] = Field(default_factory=list)
+    crop_preview_path: str | None = None
+    summary: str = ""
+
+
 class Grade(str, Enum):
     S = "S"
     A = "A"
@@ -68,6 +108,7 @@ class AnalysisReport(BaseModel):
     aesthetic: AestheticScore | None = None
     composition: CompositionScore | None = None
     ai_feedback: AIFeedback | None = None
+    suggestions: SuggestionsResult | None = None
     plugin_results: dict[str, Any] = Field(default_factory=dict)
     overall_score: float = Field(ge=0, le=100, default=0)
     grade: Grade = Grade.F
