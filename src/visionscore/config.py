@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     thresholds: Thresholds = Thresholds()
     suggestion_thresholds: SuggestionThresholds = SuggestionThresholds()
 
+    # Mobile-friendly API (Phase 9.8)
+    api_auth_enabled: bool = False
+    api_admin_key: str | None = None
+    rate_limit_enabled: bool = True
+    rate_limit_default_rpm: int = 60
+    thumbnail_max_width: int = 400
+    thumbnail_quality: int = 75
+
     @field_validator("model_dir", "plugin_dir", mode="before")
     @classmethod
     def _expand_path(cls, v: object) -> object:

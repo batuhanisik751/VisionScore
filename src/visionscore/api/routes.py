@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import time
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import (
@@ -15,19 +17,29 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from starlette.responses import StreamingResponse
 
 from visionscore import __version__
 from visionscore.api.schemas import (
     AnalyzeResponse,
+    ApiKeyCreateRequest,
+    ApiKeyCreateResponse,
+    ApiKeyListResponse,
     BatchGroupsResponse,
     BatchSaveResponse,
     HealthResponse,
+    LeaderboardEntry,
+    LeaderboardResponse,
     PluginListResponse,
     PluginResponse,
     ReportListResponse,
     SavedReportResponse,
     TrainingStatusResponse,
+    UploadResponse,
+    WebhookCreateRequest,
+    WebhookCreateResponse,
+    WebhookListResponse,
 )
 from visionscore.api.supabase_client import (
     SupabaseClient,
@@ -40,6 +52,12 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
+
+# In-memory store for uploaded files awaiting SSE streaming.
+# Maps task_id -> {"content": bytes, "suffix": str, "skip_ai": bool,
+#                  "skip_suggestions": bool, "weights": str|None, "created": float}
+_pending_tasks: dict[str, dict[str, Any]] = {}
+_TASK_TTL_SECONDS = 300  # 5 minutes
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +217,125 @@ async def analyze_image(
     return AnalyzeResponse(report=report, warnings=warnings)
 
 
+# ---------------------------------------------------------------------------
+# SSE real-time progress endpoints
+# ---------------------------------------------------------------------------
+
+
+def _purge_stale_tasks() -> None:
+    """Remove pending tasks older than TTL."""
+    now = time.time()
+    stale = [tid for tid, t in _pending_tasks.items() if now - t["created"] > _TASK_TTL_SECONDS]
+    for tid in stale:
+        _pending_tasks.pop(tid, None)
+
+
+@router.post(
+    "/analyze/upload",
+    response_model=UploadResponse,
+    tags=["analysis"],
+    summary="Upload an image for SSE-streamed analysis",
+    responses={
+        400: {"description": "Invalid file format or empty file"},
+        413: {"description": "File too large (max 20MB)"},
+    },
+)
+async def upload_for_streaming(
+    file: UploadFile = File(...),
+    skip_ai: bool = Query(False, description="Skip AI feedback analysis"),
+    skip_suggestions: bool = Query(False, description="Skip improvement suggestions"),
+    weights: str | None = Query(
+        None,
+        description="Custom weights t:a:c:f (e.g. 25:30:25:20)",
+        pattern=r"^\d+(\.\d+)?:\d+(\.\d+)?:\d+(\.\d+)?:\d+(\.\d+)?$",
+    ),
+):
+    """Upload an image and get a task_id for streaming progress via SSE."""
+    _purge_stale_tasks()
+    suffix = _validate_extension(file.filename)
+    content = await _read_upload(file)
+
+    task_id = uuid4().hex
+    _pending_tasks[task_id] = {
+        "content": content,
+        "suffix": suffix,
+        "skip_ai": skip_ai,
+        "skip_suggestions": skip_suggestions,
+        "weights": weights,
+        "created": time.time(),
+    }
+    return UploadResponse(task_id=task_id)
+
+
+@router.get(
+    "/analyze/stream/{task_id}",
+    tags=["analysis"],
+    summary="Stream analysis progress via SSE",
+    responses={404: {"description": "Task not found or already consumed"}},
+)
+async def stream_analysis(task_id: str, request: Request):
+    """Connect to an SSE stream that reports per-stage analysis progress."""
+    task = _pending_tasks.pop(task_id, None)
+    if task is None:
+        raise HTTPException(404, "Task not found or already consumed")
+
+    from visionscore.api.sse import analysis_event_stream
+    from visionscore.config import AnalysisWeights
+    from visionscore.pipeline.orchestrator import AnalysisOrchestrator
+
+    settings = request.app.state.settings
+    weights_str = task["weights"]
+    if weights_str:
+        parts = weights_str.split(":")
+        if len(parts) != 4:
+            raise HTTPException(400, "weights must be 4 colon-separated numbers (t:a:c:f)")
+        try:
+            raw = [float(p) for p in parts]
+        except ValueError:
+            raise HTTPException(400, "weights values must be numbers")
+        total = sum(raw)
+        if total <= 0:
+            raise HTTPException(400, "weights must sum to a positive number")
+        settings = settings.model_copy(
+            update={
+                "analysis_weights": AnalysisWeights(
+                    technical=raw[0] / total,
+                    aesthetic=raw[1] / total,
+                    composition=raw[2] / total,
+                    ai_feedback=raw[3] / total,
+                )
+            }
+        )
+
+    with tempfile.NamedTemporaryFile(suffix=task["suffix"], delete=False) as tmp:
+        tmp.write(task["content"])
+        tmp_path = Path(tmp.name)
+
+    orchestrator = AnalysisOrchestrator(
+        settings=settings,
+        skip_ai=task["skip_ai"],
+        skip_suggestions=task["skip_suggestions"],
+    )
+
+    async def _stream():
+        try:
+            async for event in analysis_event_stream(orchestrator, tmp_path):
+                yield event
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Encoding": "identity",
+        },
+    )
+
+
 @router.get(
     "/uploads/{filename}",
     tags=["system"],
@@ -212,6 +349,30 @@ async def serve_upload(filename: str):
     if not path.is_file():
         raise HTTPException(404, "Image not found")
     return FileResponse(path)
+
+
+@router.get(
+    "/uploads/{filename}/thumbnail",
+    tags=["system"],
+    summary="Serve a thumbnail of a locally stored image",
+)
+async def serve_thumbnail(
+    filename: str,
+    width: int = Query(400, ge=32, le=1024),
+    quality: int = Query(75, ge=10, le=100),
+):
+    """Generate and return a thumbnail for the given upload."""
+    safe = Path(filename).name
+    path = UPLOADS_DIR / safe
+    if not path.is_file():
+        raise HTTPException(404, "Image not found")
+
+    image_bytes = await asyncio.to_thread(path.read_bytes)
+
+    from visionscore.api.thumbnails import generate_thumbnail
+
+    thumb_bytes = await asyncio.to_thread(generate_thumbnail, image_bytes, width, quality)
+    return Response(content=thumb_bytes, media_type="image/jpeg")
 
 
 @router.post(
@@ -256,6 +417,20 @@ async def analyze_and_save(
             "Analysis succeeded but saving failed. "
             "Ensure the 'analysis_reports' table exists in Supabase (see sql/schema.sql).",
         )
+
+    # Dispatch webhook for analysis completion
+    try:
+        from visionscore.api.webhooks import WebhookDispatcher
+
+        dispatcher = WebhookDispatcher(db)
+        await dispatcher.dispatch("analysis.completed", {
+            "report_id": report_id,
+            "overall_score": report.overall_score,
+            "grade": report.grade.value,
+            "image_url": image_url,
+        })
+    except Exception:
+        pass  # Webhook failure should not break the response
 
     return SavedReportResponse(id=report_id, report=report, image_url=image_url, warnings=warnings)
 
@@ -391,6 +566,19 @@ async def save_batch(
     if saved_count == 0 and errors_saved == 0:
         raise HTTPException(400, "No reports could be saved")
 
+    # Dispatch webhook for batch completion
+    try:
+        from visionscore.api.webhooks import WebhookDispatcher
+
+        dispatcher = WebhookDispatcher(db)
+        await dispatcher.dispatch("batch.completed", {
+            "batch_id": batch_id,
+            "saved_count": saved_count,
+            "errors_saved": errors_saved,
+        })
+    except Exception:
+        pass  # Webhook failure should not break the response
+
     return BatchSaveResponse(
         batch_id=batch_id, saved_count=saved_count, errors_saved=errors_saved
     )
@@ -449,6 +637,77 @@ async def delete_batch(
     if not deleted:
         raise HTTPException(404, "Batch not found")
     return {"detail": "Batch deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/leaderboard",
+    response_model=LeaderboardResponse,
+    tags=["leaderboard"],
+    summary="Get image leaderboard ranked by score",
+    responses={503: {"description": "Supabase not configured"}},
+)
+async def leaderboard(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    min_score: float | None = Query(None, ge=0, le=100),
+    max_score: float | None = Query(None, ge=0, le=100),
+    grade: str | None = Query(None),
+    sort_by: str = Query("overall_score"),
+    sort_order: str = Query("desc"),
+    include_batch: bool = Query(False),
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Fetch ranked images for the leaderboard with filtering and pagination."""
+    rows, total = await db.get_leaderboard(
+        limit=limit,
+        offset=offset,
+        min_score=min_score,
+        max_score=max_score,
+        grade=grade,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        include_batch=include_batch,
+    )
+
+    entries = []
+    grade_dist: dict[str, int] = {}
+    score_sum = 0.0
+
+    for row in rows:
+        g = row.get("grade", "F")
+        grade_dist[g] = grade_dist.get(g, 0) + 1
+        score_sum += row.get("overall_score", 0)
+
+        full = row.get("full_report") or {}
+        ai = full.get("ai_feedback") or {}
+
+        entries.append(
+            LeaderboardEntry(
+                id=row.get("id", ""),
+                image_url=row.get("image_url"),
+                overall_score=row.get("overall_score", 0),
+                grade=g,
+                created_at=row.get("created_at", ""),
+                filename=row.get("image_path", ""),
+                genre=ai.get("genre") or None,
+            )
+        )
+
+    potd = entries[0] if entries and sort_by == "overall_score" and sort_order == "desc" else None
+    avg = score_sum / len(entries) if entries else 0.0
+
+    return LeaderboardResponse(
+        entries=entries,
+        total=total,
+        potd=potd,
+        average_score=round(avg, 1),
+        grade_distribution=grade_dist,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -688,3 +947,174 @@ async def start_training(
         "image_count": len(image_files),
         "output_path": str(output_path),
     }
+
+
+# ---------------------------------------------------------------------------
+# API Key Management (Phase 9.8)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyCreateResponse,
+    tags=["auth"],
+    summary="Generate a new API key",
+)
+async def create_api_key(
+    body: ApiKeyCreateRequest,
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Create a new API key. Requires admin key when configured."""
+    from visionscore.api.auth import require_admin_key, generate_api_key
+
+    require_admin_key(request)
+    raw_key, key_hash = generate_api_key()
+    key_prefix = raw_key[:11]  # "vs_" + first 8 hex chars
+
+    key_id = await db.create_api_key(body.name, key_hash, key_prefix, body.rate_limit_per_minute)
+    if key_id is None:
+        raise HTTPException(500, "Failed to create API key")
+
+    return ApiKeyCreateResponse(
+        id=key_id,
+        key=raw_key,
+        name=body.name,
+        rate_limit_per_minute=body.rate_limit_per_minute,
+    )
+
+
+@router.get(
+    "/api-keys",
+    response_model=ApiKeyListResponse,
+    tags=["auth"],
+    summary="List all API keys",
+)
+async def list_api_keys(
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """List all API keys (admin only). Never exposes key hashes."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+    keys = await db.list_api_keys()
+    return ApiKeyListResponse(keys=keys)
+
+
+@router.delete(
+    "/api-keys/{key_id}",
+    tags=["auth"],
+    summary="Revoke an API key",
+)
+async def revoke_api_key(
+    key_id: str,
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Soft-delete an API key by setting is_active=False."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+    success = await db.deactivate_api_key(key_id)
+    if not success:
+        raise HTTPException(404, "API key not found")
+    return {"detail": "API key revoked"}
+
+
+# ---------------------------------------------------------------------------
+# Webhook Management (Phase 9.8)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/webhooks",
+    response_model=WebhookCreateResponse,
+    tags=["webhooks"],
+    summary="Register a webhook",
+)
+async def create_webhook(
+    body: WebhookCreateRequest,
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Register a new webhook URL for event notifications."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+
+    valid_events = {"analysis.completed", "batch.completed"}
+    for ev in body.events:
+        if ev not in valid_events:
+            raise HTTPException(400, f"Invalid event: {ev}. Valid: {sorted(valid_events)}")
+
+    wh_id = await db.create_webhook(body.url, body.events, body.secret)
+    if wh_id is None:
+        raise HTTPException(500, "Failed to create webhook")
+
+    return WebhookCreateResponse(id=wh_id, url=body.url, events=body.events)
+
+
+@router.get(
+    "/webhooks",
+    response_model=WebhookListResponse,
+    tags=["webhooks"],
+    summary="List all webhooks",
+)
+async def list_webhooks(
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """List all registered webhooks (admin only)."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+    webhooks = await db.list_webhooks()
+    return WebhookListResponse(webhooks=webhooks)
+
+
+@router.delete(
+    "/webhooks/{webhook_id}",
+    tags=["webhooks"],
+    summary="Delete a webhook",
+)
+async def delete_webhook(
+    webhook_id: str,
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Delete a webhook registration."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+    success = await db.delete_webhook(webhook_id)
+    if not success:
+        raise HTTPException(404, "Webhook not found")
+    return {"detail": "Webhook deleted"}
+
+
+@router.post(
+    "/webhooks/{webhook_id}/test",
+    tags=["webhooks"],
+    summary="Send a test ping to a webhook",
+)
+async def test_webhook(
+    webhook_id: str,
+    request: Request,
+    db: SupabaseClient = Depends(_require_supabase),
+):
+    """Send a test ping event to verify the webhook URL."""
+    from visionscore.api.auth import require_admin_key
+
+    require_admin_key(request)
+
+    webhooks = await db.list_webhooks()
+    wh = next((w for w in webhooks if w["id"] == webhook_id), None)
+    if wh is None:
+        raise HTTPException(404, "Webhook not found")
+
+    from visionscore.api.webhooks import WebhookDispatcher
+
+    dispatcher = WebhookDispatcher(db)
+    await dispatcher.deliver_one(wh, "test.ping", {"message": "Test ping from VisionScore"})
+    return {"detail": "Test ping sent"}

@@ -55,7 +55,7 @@ export function BatchPage() {
   const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
 
   const [analyzing, setAnalyzing] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, filename: "" });
+  const [progress, setProgress] = useState({ current: 0, total: 0, filename: "", stageMessage: "", stagePercent: 0 });
   const [error, setError] = useState<string | null>(null);
   const [batch, setBatch] = useState<BatchResult | null>(null);
 
@@ -147,9 +147,10 @@ export function BatchPage() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      setProgress({ current: i + 1, total: files.length, filename: file.name });
+      setProgress({ current: i + 1, total: files.length, filename: file.name, stageMessage: "Uploading...", stagePercent: 0 });
 
       try {
+        // Step 1: Upload
         const formData = new FormData();
         formData.append("file", file);
 
@@ -160,18 +161,60 @@ export function BatchPage() {
           `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`
         );
 
-        const res = await fetch(`/api/v1/analyze?${params}`, {
+        const uploadRes = await fetch(`/api/v1/analyze/upload?${params}`, {
           method: "POST",
           body: formData,
         });
 
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.detail || `Failed (${res.status})`);
+        if (!uploadRes.ok) {
+          const body = await uploadRes.json().catch(() => null);
+          throw new Error(body?.detail || `Upload failed (${uploadRes.status})`);
         }
 
-        const data = await res.json();
-        const report = data.report as AnalysisReport;
+        const { task_id } = await uploadRes.json();
+
+        // Step 2: Stream progress
+        const report = await new Promise<AnalysisReport>((resolve, reject) => {
+          (async () => {
+            const streamRes = await fetch(`/api/v1/analyze/stream/${task_id}`);
+            if (!streamRes.ok) {
+              const body = await streamRes.json().catch(() => null);
+              reject(new Error(body?.detail || `Stream failed (${streamRes.status})`));
+              return;
+            }
+            const reader = streamRes.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const blocks = buffer.split("\n\n");
+              buffer = blocks.pop()!;
+              for (const block of blocks) {
+                if (!block.trim()) continue;
+                let eventType = "message";
+                let data = "";
+                for (const line of block.split("\n")) {
+                  if (line.startsWith("event: ")) eventType = line.slice(7);
+                  else if (line.startsWith("data: ")) data = line.slice(6);
+                }
+                if (!data) continue;
+                const parsed = JSON.parse(data);
+                if (eventType === "progress") {
+                  setProgress((prev) => ({ ...prev, stageMessage: parsed.message, stagePercent: parsed.percent }));
+                } else if (eventType === "complete") {
+                  resolve(parsed.report as AnalysisReport);
+                  return;
+                } else if (eventType === "error") {
+                  reject(new Error(parsed.detail || "Analysis failed"));
+                  return;
+                }
+              }
+            }
+            reject(new Error("Stream ended without completion"));
+          })();
+        });
         results.push({
           filename: file.name,
           report,
@@ -564,7 +607,7 @@ export function BatchPage() {
               {analyzing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Analyzing {progress.current}/{progress.total}...
+                  {progress.current}/{progress.total} — {progress.stageMessage || "Starting..."}
                 </>
               ) : (
                 <>
@@ -577,7 +620,7 @@ export function BatchPage() {
 
           {/* Progress bar */}
           {analyzing && (
-            <div className="max-w-xl mx-auto mt-6">
+            <div className="max-w-xl mx-auto mt-6 space-y-3">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-gray-400 truncate mr-2">
                   <Image className="w-3.5 h-3.5 inline mr-1" />
@@ -587,12 +630,28 @@ export function BatchPage() {
                   {progress.current}/{progress.total}
                 </span>
               </div>
+              {/* Overall batch progress */}
               <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300"
                   style={{ width: `${(progress.current / progress.total) * 100}%` }}
                 />
               </div>
+              {/* Per-image stage progress */}
+              {progress.stageMessage && (
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-gray-500">{progress.stageMessage}</span>
+                    <span className="text-gray-500 tabular-nums">{progress.stagePercent}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-white/[0.04] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-500/60 rounded-full transition-all duration-300"
+                      style={{ width: `${progress.stagePercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

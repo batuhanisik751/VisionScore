@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle, Save } from "lucide-react";
 import { isAcceptedImage, ACCEPT_ATTR } from "./image-utils";
+import { useAnalysisStream } from "./use-analysis-stream";
 
 export function UploadPage() {
   const navigate = useNavigate();
@@ -12,9 +13,10 @@ export function UploadPage() {
   const [autoSave, setAutoSave] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
-  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { analyze, progress, isAnalyzing } = useAnalysisStream();
 
   const handleFile = useCallback((f: File) => {
     if (!isAcceptedImage(f)) return;
@@ -33,46 +35,42 @@ export function UploadPage() {
 
   const handleAnalyze = async () => {
     if (!file) return;
-    setAnalyzing(true);
     setError(null);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+    const w = `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`;
 
-      const params = new URLSearchParams();
-      if (skipAI) params.set("skip_ai", "true");
-      const w = `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`;
-      params.set("weights", w);
-
-      const endpoint = autoSave ? `/api/v1/analyze/save?${params}` : `/api/v1/analyze?${params}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || `Analysis failed (${res.status})`);
-      }
-
-      const data = await res.json();
-
-      if (autoSave) {
-        // Combined endpoint returns { id, report, image_url, warnings }
-        navigate(`/report/${data.id}`, {
-          state: { report: data.report, warnings: data.warnings, imageUrl: data.image_url || preview },
-        });
-      } else {
+    await analyze(file, {
+      skipAI,
+      weights: w,
+      onComplete: async (data) => {
+        if (autoSave) {
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const params = new URLSearchParams();
+            if (skipAI) params.set("skip_ai", "true");
+            params.set("weights", w);
+            const res = await fetch(`/api/v1/analyze/save?${params}`, {
+              method: "POST",
+              body: formData,
+            });
+            if (res.ok) {
+              const saved = await res.json();
+              navigate(`/report/${saved.id}`, {
+                state: { report: saved.report, warnings: saved.warnings, imageUrl: saved.image_url || preview },
+              });
+              return;
+            }
+          } catch {
+            // Fall through to unsaved results
+          }
+        }
         navigate("/results/new", {
           state: { report: data.report, warnings: data.warnings, imageUrl: preview, file },
         });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed");
-    } finally {
-      setAnalyzing(false);
-    }
+      },
+      onError: (msg) => setError(msg),
+    });
   };
 
   const updateWeight = (key: keyof typeof weights, value: number) => {
@@ -235,18 +233,33 @@ export function UploadPage() {
 
           <button
             onClick={handleAnalyze}
-            disabled={!file || analyzing}
+            disabled={!file || isAnalyzing}
             className={`w-full py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${
-              file && !analyzing
+              file && !isAnalyzing
                 ? "bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
                 : "bg-white/[0.05] text-gray-600 cursor-not-allowed"
             }`}
           >
-            {analyzing ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Analyzing...
-              </>
+            {isAnalyzing ? (
+              <div className="flex flex-col items-center gap-2 w-full">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="text-white text-sm">
+                    {progress ? progress.message : "Starting analysis..."}
+                  </span>
+                </div>
+                {progress && (
+                  <div className="w-full flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-purple-400 rounded-full transition-all duration-300"
+                        style={{ width: `${progress.percent}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-400 tabular-nums w-8 text-right">{progress.percent}%</span>
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <Eye className="w-4 h-4" />

@@ -36,3 +36,23 @@ class TestOrchestrator:
         orch = AnalysisOrchestrator(skip_ai=True)
         report = orch.run(normal_image_path)
         assert report.analysis_time_seconds > 0
+
+    def test_progress_callback_called_for_all_stages(self, normal_image_path) -> None:
+        from unittest.mock import MagicMock
+
+        cb = MagicMock()
+        orch = AnalysisOrchestrator(skip_ai=True)
+        orch.run(normal_image_path, progress_callback=cb)
+        assert cb.call_count == 9
+        # Verify stages arrive in order with correct indices
+        for i, call in enumerate(cb.call_args_list):
+            stage_name, stage_index, total, message = call.args
+            assert stage_index == i + 1
+            assert total == 9
+            assert isinstance(stage_name, str)
+            assert isinstance(message, str)
+
+    def test_no_callback_still_works(self, normal_image_path) -> None:
+        orch = AnalysisOrchestrator(skip_ai=True)
+        report = orch.run(normal_image_path, progress_callback=None)
+        assert isinstance(report, AnalysisReport)

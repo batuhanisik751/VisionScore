@@ -11,12 +11,37 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 - **Aesthetic Scoring** -- NIMA (MobileNetV2) trained on AVA dataset
 - **Composition Analysis** -- Rule of thirds, subject position, horizon, balance via spectral residual saliency
 - **AI Feedback** -- Ollama + LLaVA for natural language critique with structured JSON output
+- **Improvement Suggestions** -- Structured edit suggestions (crop, exposure, contrast, etc.) with crop preview generation
 - **Score Aggregation** -- Weighted scoring with configurable weights, grades S/A/B/C/D/F
 - **Comparison & Batch** -- Side-by-side image comparison, directory batch analysis with CSV export
+- **Gallery Mode** -- Generate standalone HTML gallery from batch results with POTD hero and rankings
 - **Fine-Tuning** -- Train NIMA on your own rated images with EMD loss, augmentation, and LR scheduling
 - **Plugin System** -- Extensible analyzer plugins (bundled Instagram Readiness + custom plugin support)
-- **REST API** -- FastAPI with Supabase persistence, file uploads up to 20MB
-- **Web Dashboard** -- React + TypeScript + Vite + Tailwind frontend with upload, results, batch, comparison, history, plugin management, and training UI
+- **REST API** -- FastAPI with Supabase persistence, file uploads up to 20MB, GZip compression, thumbnail generation
+- **Mobile-Friendly API** -- API key authentication, per-key rate limiting, webhook notifications (analysis/batch events), HMAC-signed payloads
+- **Web Dashboard** -- React + TypeScript + Vite + Tailwind frontend with upload, results, batch, comparison, history, plugin management, training, and API settings UI
+
+## Architecture
+
+```mermaid
+graph LR
+    A[Image Input<br/>file / URL] --> B[Loader &<br/>Metadata]
+    B --> C[Technical<br/>Analyzer]
+    B --> D[Aesthetic<br/>Scorer NIMA]
+    B --> E[Composition<br/>Analyzer]
+    B --> F[AI Feedback<br/>Vision LLM]
+    C -- 25% --> G[Score<br/>Aggregator]
+    D -- 30% --> G
+    E -- 25% --> G
+    F -- 20% --> G
+    B --> H[Suggestions]
+    B --> I[Plugins]
+    G --> J[Grade<br/>S/A/B/C/D/F]
+    J --> K[JSON]
+    J --> L[CLI]
+    J --> M[Markdown]
+    J --> N[Web Dashboard]
+```
 
 ## Quick Start
 
@@ -51,6 +76,7 @@ visionscore info photo.jpg                           # EXIF metadata
 visionscore compare before.jpg after.jpg             # Compare two images
 visionscore analyze-batch photos/ --skip-ai          # Batch analysis
 visionscore analyze-batch photos/ --save results.csv # Export CSV
+visionscore gallery photos/ --output gallery.html    # HTML gallery
 visionscore train photos/ ratings.csv --epochs 20    # Fine-tune NIMA
 visionscore plugins                                  # List registered plugins
 ```
@@ -77,13 +103,22 @@ uvicorn visionscore.api.app:app --reload
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/analyze` | POST | Analyze a single image |
+| `/api/v1/analyze/save` | POST | Analyze and save to Supabase |
+| `/api/v1/analyze/upload` | POST | Upload image, get task_id for SSE streaming |
+| `/api/v1/analyze/stream/{task_id}` | GET | SSE stream of per-stage analysis progress |
 | `/api/v1/batch` | POST | Batch analyze multiple images |
 | `/api/v1/compare` | POST | Compare two images |
 | `/api/v1/train` | POST | Start NIMA fine-tuning |
 | `/api/v1/plugins` | GET | List registered plugins |
 | `/api/v1/reports` | GET | Retrieve saved reports |
+| `/api/v1/leaderboard` | GET | Ranked image leaderboard |
+| `/api/v1/api-keys` | POST/GET/DELETE | API key management (admin) |
+| `/api/v1/webhooks` | POST/GET/DELETE | Webhook registration (admin) |
+| `/api/v1/uploads/{file}/thumbnail` | GET | Thumbnail generation |
 
 Full Swagger docs at `http://localhost:8000/docs`. Config via env vars or `.env` file -- see `.env.example`.
+
+GZip compression is enabled for all responses above 500 bytes. Thumbnails can be requested with `?width=` parameter.
 
 ## Plugins
 
@@ -129,7 +164,7 @@ src/visionscore/
   config.py        # Settings loaded from .env
   models.py        # Pydantic data models
 frontend/          # React 18 + TypeScript + Vite + Tailwind dashboard
-tests/             # 22 pytest test files
+tests/             # 28 pytest test files
 scripts/           # Model download utility
 ```
 

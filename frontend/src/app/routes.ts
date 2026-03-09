@@ -7,6 +7,8 @@ import { BatchPage } from "./components/batch-page";
 import { ComparePage } from "./components/compare-page";
 import { PluginsPage } from "./components/plugins-page";
 import { TrainingPage } from "./components/training-page";
+import { LeaderboardPage } from "./components/leaderboard-page";
+import { ApiSettingsPage } from "./components/api-settings-page";
 
 export const router = createBrowserRouter([
   {
@@ -20,8 +22,10 @@ export const router = createBrowserRouter([
       { path: "report/:id", Component: SavedReportPage },
       { path: "batch-report/:batchId", Component: BatchReportPage },
       { path: "history", Component: HistoryPage },
+      { path: "leaderboard", Component: LeaderboardPage },
       { path: "plugins", Component: PluginsPage },
       { path: "training", Component: TrainingPage },
+      { path: "settings", Component: ApiSettingsPage },
     ],
   },
 ]);

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
 import { Upload, ArrowUp, ArrowDown, Minus, Loader2, X, ChevronDown, Eye, EyeOff, Settings2 } from "lucide-react";
 import { ScoreRadarChart } from "./score-radar-chart";
 import { ImageOverlay } from "./image-overlay";
@@ -12,6 +12,8 @@ interface CompareSlot {
   file: File | null;
   loading: boolean;
   error: string | null;
+  stageMessage?: string;
+  stagePercent?: number;
 }
 
 interface SavedRow {
@@ -60,11 +62,14 @@ export function ComparePage() {
       .catch(() => {});
   }, []);
 
-  const analyzeFile = useCallback(async (file: File, setSlot: (s: CompareSlot) => void) => {
+  type SlotSetter = Dispatch<SetStateAction<CompareSlot>>;
+
+  const analyzeFile = useCallback(async (file: File, setSlot: SlotSetter) => {
     const imageUrl = URL.createObjectURL(file);
-    setSlot({ report: null, imageUrl, file, loading: true, error: null });
+    setSlot({ report: null, imageUrl, file, loading: true, error: null, stageMessage: "Uploading...", stagePercent: 0 });
 
     try {
+      // Step 1: Upload
       const formData = new FormData();
       formData.append("file", file);
 
@@ -72,26 +77,63 @@ export function ComparePage() {
       if (skipAI) params.set("skip_ai", "true");
       params.set("weights", `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`);
 
-      const res = await fetch(`/api/v1/analyze?${params}`, { method: "POST", body: formData });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || `Analysis failed (${res.status})`);
+      const uploadRes = await fetch(`/api/v1/analyze/upload?${params}`, { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => null);
+        throw new Error(body?.detail || `Upload failed (${uploadRes.status})`);
       }
-      const data = await res.json();
-      setSlot({ report: { ...data.report, image_url: imageUrl }, imageUrl, file, loading: false, error: null });
+      const { task_id } = await uploadRes.json();
+
+      // Step 2: Stream progress
+      const streamRes = await fetch(`/api/v1/analyze/stream/${task_id}`);
+      if (!streamRes.ok) {
+        const body = await streamRes.json().catch(() => null);
+        throw new Error(body?.detail || `Stream failed (${streamRes.status})`);
+      }
+
+      const reader = streamRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop()!;
+        for (const block of blocks) {
+          if (!block.trim()) continue;
+          let eventType = "message";
+          let data = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7);
+            else if (line.startsWith("data: ")) data = line.slice(6);
+          }
+          if (!data) continue;
+          const parsed = JSON.parse(data);
+          if (eventType === "progress") {
+            setSlot((prev: CompareSlot) => ({ ...prev, stageMessage: parsed.message, stagePercent: parsed.percent }));
+          } else if (eventType === "complete") {
+            setSlot({ report: { ...parsed.report, image_url: imageUrl }, imageUrl, file, loading: false, error: null });
+            return;
+          } else if (eventType === "error") {
+            throw new Error(parsed.detail || "Analysis failed");
+          }
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Analysis failed";
       setSlot({ report: null, imageUrl, file, loading: false, error: msg });
     }
   }, [skipAI, weights]);
 
-  const handleDrop = useCallback((e: React.DragEvent, setSlot: (s: CompareSlot) => void) => {
+  const handleDrop = useCallback((e: React.DragEvent, setSlot: SlotSetter) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file) analyzeFile(file, setSlot);
   }, [analyzeFile]);
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, setSlot: (s: CompareSlot) => void) => {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, setSlot: SlotSetter) => {
     const file = e.target.files?.[0];
     if (file) analyzeFile(file, setSlot);
     e.target.value = "";
@@ -305,7 +347,18 @@ function UploadSlot({ label, slot, onDrop, onFileChange, onPickSaved, onClear, a
     return (
       <div className={`rounded-xl border ${borderColor} bg-white/[0.03] p-8 flex flex-col items-center justify-center min-h-[220px]`}>
         <Loader2 className={`w-8 h-8 ${textColor} animate-spin mb-3`} />
-        <p className="text-sm text-gray-400">Analyzing {label}...</p>
+        <p className="text-sm text-gray-400 mb-2">{slot.stageMessage || `Analyzing ${label}...`}</p>
+        {slot.stagePercent != null && slot.stagePercent > 0 && (
+          <div className="w-full max-w-[200px] flex items-center gap-2">
+            <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${accentColor === "blue" ? "bg-blue-400" : "bg-purple-400"}`}
+                style={{ width: `${slot.stagePercent}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-500 tabular-nums w-8 text-right">{slot.stagePercent}%</span>
+          </div>
+        )}
       </div>
     );
   }

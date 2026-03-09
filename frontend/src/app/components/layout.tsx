@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { Eye, Upload, BarChart3, FolderOpen, Columns2, Plug, GraduationCap } from "lucide-react";
+import { Eye, Upload, BarChart3, FolderOpen, Columns2, Plug, GraduationCap, Trophy, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface HealthStatus {
@@ -29,8 +29,10 @@ export function Layout() {
     { path: "/batch", label: "Batch", icon: FolderOpen },
     { path: "/compare", label: "Compare", icon: Columns2 },
     { path: "/history", label: "Reports", icon: BarChart3 },
+    { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
     { path: "/plugins", label: "Plugins", icon: Plug },
     { path: "/training", label: "Training", icon: GraduationCap },
+    { path: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (

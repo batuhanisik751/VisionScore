@@ -12,6 +12,19 @@ from visionscore.scoring.aggregator import ScoreAggregator
 from visionscore.scoring.grading import assign_grade
 
 
+_STAGES: list[tuple[str, str]] = [
+    ("loading", "Loading image..."),
+    ("metadata", "Extracting metadata..."),
+    ("technical", "Running technical analysis..."),
+    ("aesthetic", "Running aesthetic analysis..."),
+    ("composition", "Running composition analysis..."),
+    ("ai_feedback", "Running AI feedback analysis..."),
+    ("suggestions", "Generating improvement suggestions..."),
+    ("plugins", "Running plugin analyzers..."),
+    ("aggregating", "Aggregating scores and grading..."),
+]
+
+
 class AnalysisOrchestrator:
     """Coordinate the full analysis pipeline from image path to completed report."""
 
@@ -41,20 +54,34 @@ class AnalysisOrchestrator:
             register_bundled_plugins(registry)
         return registry
 
-    def run(self, image_path: Path) -> AnalysisReport:
+    def run(
+        self,
+        image_path: Path,
+        progress_callback: Callable[[str, int, int, str], None] | None = None,
+    ) -> AnalysisReport:
         self.warnings = []
         start = time.perf_counter()
+        total = len(_STAGES)
 
+        def _notify(stage_index: int) -> None:
+            if progress_callback:
+                name, msg = _STAGES[stage_index]
+                progress_callback(name, stage_index + 1, total, msg)
+
+        _notify(0)
         image = load_image(image_path, max_size=self._settings.max_image_size)
+        _notify(1)
         meta = extract_metadata(image_path)
 
         # Technical analysis (always runs)
+        _notify(2)
         from visionscore.analyzers.technical import TechnicalAnalyzer
 
         tech_analyzer = TechnicalAnalyzer(thresholds=self._settings.thresholds)
         technical = tech_analyzer.analyze(image, metadata=meta)
 
         # Aesthetic analysis (optional - needs NIMA weights)
+        _notify(3)
         aesthetic = None
         try:
             from visionscore.analyzers.aesthetic import AestheticAnalyzer
@@ -76,12 +103,14 @@ class AnalysisOrchestrator:
             self.warnings.append(f"Aesthetic scoring error: {e}")
 
         # Composition analysis (always runs)
+        _notify(4)
         from visionscore.analyzers.composition import CompositionAnalyzer
 
         comp_analyzer = CompositionAnalyzer()
         composition = comp_analyzer.analyze(image, metadata=meta)
 
         # AI feedback (optional - needs Ollama)
+        _notify(5)
         ai_feedback = None
         if not self._skip_ai:
             try:
@@ -103,6 +132,7 @@ class AnalysisOrchestrator:
             self.warnings.append("AI feedback skipped: --skip-ai flag set.")
 
         # Improvement suggestions (optional)
+        _notify(6)
         suggestions = None
         if not self._skip_suggestions:
             try:
@@ -122,6 +152,7 @@ class AnalysisOrchestrator:
                 self.warnings.append(f"Suggestions error: {e}")
 
         # Plugin analyzers
+        _notify(7)
         plugin_results: dict[str, object] = {}
         plugin_weights: dict[str, tuple[float, str]] = {}
         for info, analyzer_cls in self._plugin_registry.get_all():
@@ -134,7 +165,8 @@ class AnalysisOrchestrator:
             except Exception as e:
                 self.warnings.append(f"Plugin '{info.display_name}' error: {e}")
 
-        # Build report
+        # Build report, aggregate and grade
+        _notify(8)
         report = AnalysisReport(
             image_meta=meta,
             technical=technical,
@@ -145,7 +177,6 @@ class AnalysisOrchestrator:
             plugin_results=plugin_results,
         )
 
-        # Aggregate and grade
         aggregator = ScoreAggregator(weights=self._settings.analysis_weights)
         report.overall_score = aggregator.aggregate(report, plugin_weights=plugin_weights)
         report.grade = assign_grade(report.overall_score)

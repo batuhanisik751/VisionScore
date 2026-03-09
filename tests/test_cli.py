@@ -10,6 +10,8 @@ from visionscore.models import (
     AestheticScore,
     AIFeedback,
     AnalysisReport,
+    BatchImageResult,
+    BatchResult,
     CompositionScore,
     Grade,
     ImageMeta,
@@ -123,6 +125,65 @@ class TestCompareCommand:
         assert out_file.exists()
         content = out_file.read_text()
         assert "overall_diff" in content
+
+
+class TestGalleryCommand:
+    def _fake_batch(self) -> BatchResult:
+        rpt = _fake_report("photo.jpg", overall=85.0)
+        return BatchResult(
+            directory="/photos",
+            total_images=1,
+            successful=1,
+            failed=0,
+            results=[BatchImageResult(report=rpt, filename="photo.jpg")],
+            average_score=85.0,
+            best_image="photo.jpg",
+            best_score=85.0,
+            worst_image="photo.jpg",
+            worst_score=85.0,
+            grade_distribution={"A": 1},
+        )
+
+    def test_gallery_creates_file(self, tmp_path: Path) -> None:
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        out_file = tmp_path / "gallery.html"
+
+        mock_orch = MagicMock()
+        mock_orch.run_batch.return_value = self._fake_batch()
+        mock_orch.warnings = []
+
+        with patch("visionscore.pipeline.orchestrator.AnalysisOrchestrator", return_value=mock_orch):
+            result = runner.invoke(
+                app, ["gallery", str(img_dir), "--output", str(out_file)]
+            )
+        assert result.exit_code == 0
+        assert out_file.exists()
+        content = out_file.read_text()
+        assert "<html" in content
+        assert "photo.jpg" in content
+
+    def test_gallery_custom_title(self, tmp_path: Path) -> None:
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        out_file = tmp_path / "gallery.html"
+
+        mock_orch = MagicMock()
+        mock_orch.run_batch.return_value = self._fake_batch()
+        mock_orch.warnings = []
+
+        with patch("visionscore.pipeline.orchestrator.AnalysisOrchestrator", return_value=mock_orch):
+            result = runner.invoke(
+                app, ["gallery", str(img_dir), "--output", str(out_file), "--title", "My Photos"]
+            )
+        assert result.exit_code == 0
+        content = out_file.read_text()
+        assert "My Photos" in content
+
+    def test_gallery_invalid_directory(self, tmp_path: Path) -> None:
+        fake_dir = tmp_path / "nonexistent"
+        result = runner.invoke(app, ["gallery", str(fake_dir)])
+        assert result.exit_code == 1
 
 
 class TestTrainCommand:

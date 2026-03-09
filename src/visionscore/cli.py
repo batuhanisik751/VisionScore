@@ -190,6 +190,64 @@ def analyze_batch(
 
 
 @app.command()
+def gallery(
+    directory: Path = typer.Argument(..., help="Directory containing images"),
+    output: Path = typer.Option(
+        Path("gallery.html"), "--output", "-o", help="Output HTML file path"
+    ),
+    skip_ai: bool = typer.Option(False, "--skip-ai", help="Skip AI feedback analysis"),
+    weights: Optional[str] = typer.Option(
+        None, "--weights", help="Custom weights t:a:c:f (e.g. 25:30:25:20)"
+    ),
+    title: str = typer.Option(
+        "VisionScore Gallery", "--title", help="Gallery page title"
+    ),
+):
+    """Analyze a directory and generate an HTML gallery ranked by score."""
+    from rich.progress import Progress
+
+    from visionscore.config import Settings
+    from visionscore.output import render_batch_report
+    from visionscore.output.html_gallery import format_html_gallery
+    from visionscore.pipeline.orchestrator import AnalysisOrchestrator
+
+    if not directory.is_dir():
+        console.print(f"[red]Error: '{directory}' is not a directory[/red]")
+        raise typer.Exit(1)
+
+    settings = Settings()
+
+    if weights:
+        parsed = _parse_weights(weights)
+        if parsed is None:
+            raise typer.Exit(1)
+        settings.analysis_weights = parsed
+
+    orchestrator = AnalysisOrchestrator(settings=settings, skip_ai=skip_ai)
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Analyzing images...", total=None)
+
+        def on_progress(filename: str, current: int, total: int) -> None:
+            progress.update(
+                task, total=total, completed=current,
+                description=f"[{current}/{total}] {filename}",
+            )
+
+        batch = orchestrator.run_batch(directory, progress_callback=on_progress)
+
+    if batch.total_images == 0:
+        console.print("[yellow]No supported images found in directory.[/yellow]")
+        return
+
+    render_batch_report(batch, console, warnings=orchestrator.warnings)
+
+    html = format_html_gallery(batch, title=title)
+    output.write_text(html)
+    console.print(f"\n[green]Gallery saved to {output} — {batch.successful} images ranked[/green]")
+
+
+@app.command()
 def compare(
     image_a: Path = typer.Argument(..., help="Path to first image (before)"),
     image_b: Path = typer.Argument(..., help="Path to second image (after)"),

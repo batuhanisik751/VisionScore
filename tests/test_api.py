@@ -298,6 +298,77 @@ class TestReportsCRUD:
 
 
 # ---------------------------------------------------------------------------
+# Leaderboard
+# ---------------------------------------------------------------------------
+
+
+class TestLeaderboard:
+    def test_returns_503_without_supabase(self, client):
+        resp = client.get("/api/v1/leaderboard")
+        assert resp.status_code == 503
+
+    def test_returns_leaderboard_with_mocked_supabase(self):
+        mock_sb = MagicMock()
+        mock_sb.get_leaderboard = AsyncMock(
+            return_value=(
+                [
+                    {
+                        "id": "1",
+                        "image_url": "https://img/a.jpg",
+                        "overall_score": 90,
+                        "grade": "A",
+                        "created_at": "2026-03-01",
+                        "image_path": "a.jpg",
+                        "full_report": {"ai_feedback": {"genre": "Landscape"}},
+                    },
+                    {
+                        "id": "2",
+                        "image_url": "https://img/b.jpg",
+                        "overall_score": 70,
+                        "grade": "B",
+                        "created_at": "2026-03-02",
+                        "image_path": "b.jpg",
+                        "full_report": {},
+                    },
+                ],
+                2,
+            )
+        )
+
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
+            from visionscore.api.app import app
+
+            with TestClient(app) as c:
+                resp = c.get("/api/v1/leaderboard?limit=10&offset=0")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["entries"]) == 2
+        assert data["total"] == 2
+        assert data["potd"]["id"] == "1"
+        assert data["average_score"] == 80.0
+        assert data["grade_distribution"]["A"] == 1
+        assert data["entries"][0]["genre"] == "Landscape"
+        assert data["entries"][1]["genre"] is None
+
+    def test_empty_leaderboard(self):
+        mock_sb = MagicMock()
+        mock_sb.get_leaderboard = AsyncMock(return_value=([], 0))
+
+        with patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb):
+            from visionscore.api.app import app
+
+            with TestClient(app) as c:
+                resp = c.get("/api/v1/leaderboard")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["entries"] == []
+        assert data["potd"] is None
+        assert data["average_score"] == 0.0
+
+
+# ---------------------------------------------------------------------------
 # Plugins
 # ---------------------------------------------------------------------------
 
