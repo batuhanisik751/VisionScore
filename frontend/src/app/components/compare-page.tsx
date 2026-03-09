@@ -51,7 +51,7 @@ export function ComparePage() {
 
   // Fetch saved reports for the picker
   useEffect(() => {
-    fetch("/api/v1/reports?limit=50&report_type=single")
+    fetch("/api/v1/reports?limit=50")
       .then(async (res) => {
         if (!res.ok) return;
         const data = await res.json();

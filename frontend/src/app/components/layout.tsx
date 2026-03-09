@@ -1,15 +1,36 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { Eye, Upload, BarChart3, FolderOpen, Columns2 } from "lucide-react";
+import { Eye, Upload, BarChart3, FolderOpen, Columns2, Plug, GraduationCap } from "lucide-react";
+import { useState, useEffect } from "react";
+
+interface HealthStatus {
+  status: string;
+  version: string;
+  supabase_connected: boolean;
+}
 
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [healthError, setHealthError] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/v1/health")
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        setHealth(await res.json());
+        setHealthError(false);
+      })
+      .catch(() => setHealthError(true));
+  }, []);
 
   const navItems = [
     { path: "/", label: "Upload", icon: Upload },
     { path: "/batch", label: "Batch", icon: FolderOpen },
     { path: "/compare", label: "Compare", icon: Columns2 },
     { path: "/history", label: "Reports", icon: BarChart3 },
+    { path: "/plugins", label: "Plugins", icon: Plug },
+    { path: "/training", label: "Training", icon: GraduationCap },
   ];
 
   return (
@@ -55,6 +76,27 @@ export function Layout() {
                 </button>
               );
             })}
+          </div>
+
+          {/* Health status */}
+          <div className="flex items-center gap-2 text-xs text-gray-500" title={
+            healthError
+              ? "Backend unreachable"
+              : health
+              ? `v${health.version} • DB ${health.supabase_connected ? "connected" : "offline"}`
+              : "Checking..."
+          }>
+            <span className={`w-2 h-2 rounded-full ${
+              healthError
+                ? "bg-red-400"
+                : health
+                ? health.supabase_connected
+                  ? "bg-emerald-400"
+                  : "bg-yellow-400"
+                : "bg-gray-600 animate-pulse"
+            }`} />
+            {health && <span className="hidden sm:inline">v{health.version}</span>}
+            {healthError && <span className="hidden sm:inline">Offline</span>}
           </div>
         </div>
       </nav>

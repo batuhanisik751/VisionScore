@@ -273,8 +273,10 @@ export function BatchPage() {
 
     try {
       const reportsMap: Record<string, AnalysisReport> = {};
+      const errorsMap: Record<string, string> = {};
       batch.results.forEach((r) => {
         if (r.report) reportsMap[r.filename] = r.report;
+        else if (r.error) errorsMap[r.filename] = r.error;
       });
 
       const formData = new FormData();
@@ -284,6 +286,9 @@ export function BatchPage() {
         }
       }
       formData.append("reports_json", JSON.stringify(reportsMap));
+      if (Object.keys(errorsMap).length > 0) {
+        formData.append("errors_json", JSON.stringify(errorsMap));
+      }
 
       const res = await fetch("/api/v1/reports/batch", {
         method: "POST",

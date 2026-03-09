@@ -23,8 +23,11 @@ from visionscore.api.schemas import (
     BatchGroupsResponse,
     BatchSaveResponse,
     HealthResponse,
+    PluginListResponse,
+    PluginResponse,
     ReportListResponse,
     SavedReportResponse,
+    TrainingStatusResponse,
 )
 from visionscore.api.supabase_client import (
     SupabaseClient,
@@ -220,12 +223,17 @@ async def analyze_and_save(
     request: Request,
     file: UploadFile = File(...),
     skip_ai: bool = Query(False, description="Skip AI feedback analysis"),
+    weights: str | None = Query(
+        None,
+        description="Custom weights t:a:c:f (e.g. 25:30:25:20)",
+        pattern=r"^\d+(\.\d+)?:\d+(\.\d+)?:\d+(\.\d+)?:\d+(\.\d+)?$",
+    ),
     db: SupabaseClient = Depends(_require_supabase),
 ):
     """Upload an image, run analysis, store image and report in Supabase."""
     suffix = _validate_extension(file.filename)
     content = await _read_upload(file)
-    report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights=None)
+    report, warnings = await _run_analysis(content, suffix, request, skip_ai, weights)
 
     image_url = await db.upload_image(content, file.filename or "image.jpg")
     if image_url is None:
@@ -323,6 +331,7 @@ async def list_reports(
 async def save_batch(
     files: list[UploadFile] = File(...),
     reports_json: str = Form(...),
+    errors_json: str = Form("{}"),
     db: SupabaseClient = Depends(_require_supabase),
 ):
     """Save multiple already-analyzed reports as a batch."""
@@ -333,6 +342,11 @@ async def save_batch(
         reports_map = json.loads(reports_json)
     except Exception:
         raise HTTPException(400, "Invalid reports JSON")
+
+    try:
+        errors_map: dict[str, str] = json.loads(errors_json) if errors_json else {}
+    except Exception:
+        errors_map = {}
 
     batch_id = str(uuid4())
     saved_count = 0
@@ -360,10 +374,17 @@ async def save_batch(
         if report_id:
             saved_count += 1
 
-    if saved_count == 0:
+    # Persist error records for failed images
+    errors_saved = 0
+    if errors_map:
+        errors_saved = await db.save_batch_errors(errors_map, batch_id)
+
+    if saved_count == 0 and errors_saved == 0:
         raise HTTPException(400, "No reports could be saved")
 
-    return BatchSaveResponse(batch_id=batch_id, saved_count=saved_count)
+    return BatchSaveResponse(
+        batch_id=batch_id, saved_count=saved_count, errors_saved=errors_saved
+    )
 
 
 @router.get(
@@ -464,3 +485,197 @@ async def delete_report(
     if not deleted:
         raise HTTPException(404, "Report not found")
     return {"detail": "Report deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Plugin routes
+# ---------------------------------------------------------------------------
+
+def _build_plugin_registry(request: Request):
+    """Build a plugin registry with all discovered plugins."""
+    from visionscore.plugins import register_bundled_plugins
+    from visionscore.plugins.registry import PluginRegistry
+
+    settings = request.app.state.settings
+    registry = PluginRegistry()
+    registry.discover_entry_points()
+    if settings.plugin_dir and settings.plugin_dir.is_dir():
+        registry.discover_directory(settings.plugin_dir)
+
+    bundled_enabled = settings.enable_bundled_plugins
+    if bundled_enabled:
+        register_bundled_plugins(registry)
+
+    return registry, bundled_enabled
+
+
+@router.get(
+    "/plugins",
+    response_model=PluginListResponse,
+    tags=["plugins"],
+    summary="List registered plugins",
+)
+async def list_plugins(request: Request):
+    """List all discovered and registered analyzer plugins."""
+    registry, bundled_enabled = _build_plugin_registry(request)
+    plugins = []
+    for info, _cls in registry.get_all():
+        plugins.append(
+            PluginResponse(
+                name=info.name,
+                display_name=info.display_name,
+                version=info.version,
+                description=info.description,
+                score_weight=info.score_weight,
+                score_field=info.score_field,
+                source="bundled" if bundled_enabled else "external",
+            )
+        )
+    return PluginListResponse(plugins=plugins, bundled_enabled=bundled_enabled)
+
+
+@router.post(
+    "/plugins/toggle-bundled",
+    tags=["plugins"],
+    summary="Toggle bundled plugins on/off",
+)
+async def toggle_bundled_plugins(request: Request):
+    """Toggle the enable_bundled_plugins setting at runtime."""
+    settings = request.app.state.settings
+    new_val = not settings.enable_bundled_plugins
+    request.app.state.settings = settings.model_copy(
+        update={"enable_bundled_plugins": new_val}
+    )
+    return {"enable_bundled_plugins": new_val}
+
+
+# ---------------------------------------------------------------------------
+# Training routes
+# ---------------------------------------------------------------------------
+
+_training_state: dict = {"running": False, "progress": {}}
+
+
+@router.get(
+    "/training/status",
+    response_model=TrainingStatusResponse,
+    tags=["training"],
+    summary="Get training job status",
+)
+async def training_status():
+    """Return the current training job status."""
+    return TrainingStatusResponse(
+        running=_training_state["running"],
+        progress=_training_state["progress"],
+    )
+
+
+@router.post(
+    "/training/start",
+    tags=["training"],
+    summary="Start a NIMA fine-tuning job",
+    responses={
+        400: {"description": "Invalid configuration or missing files"},
+        409: {"description": "Training already in progress"},
+    },
+)
+async def start_training(
+    request: Request,
+    csv_file: UploadFile = File(...),
+    image_files: list[UploadFile] = File(...),
+    epochs: int = Query(20, ge=1, le=200),
+    batch_size: int = Query(16, ge=1, le=128),
+    learning_rate: float = Query(1e-4, gt=0),
+    val_split: float = Query(0.2, ge=0.05, le=0.5),
+    full_finetune: bool = Query(False),
+    augment: bool = Query(True),
+    scale: str = Query("ava", pattern=r"^(ava|visionscore)$"),
+):
+    """Upload training images + CSV and start a NIMA fine-tuning job."""
+    import shutil
+
+    if _training_state["running"]:
+        raise HTTPException(409, "Training already in progress")
+
+    settings = request.app.state.settings
+
+    # Create a temp directory with training images
+    train_dir = Path(tempfile.mkdtemp(prefix="vs_train_"))
+    csv_path = train_dir / "ratings.csv"
+
+    try:
+        # Save CSV
+        csv_content = await csv_file.read()
+        if not csv_content:
+            raise HTTPException(400, "CSV file is empty")
+        csv_path.write_bytes(csv_content)
+
+        # Save images
+        for img_file in image_files:
+            if not img_file.filename:
+                continue
+            img_content = await img_file.read()
+            (train_dir / img_file.filename).write_bytes(img_content)
+    except HTTPException:
+        raise
+    except Exception as e:
+        shutil.rmtree(train_dir, ignore_errors=True)
+        raise HTTPException(400, f"Failed to process uploads: {e}")
+
+    output_path = settings.model_dir / "nima_finetuned.pth"
+
+    _training_state["running"] = True
+    _training_state["progress"] = {
+        "status": "starting",
+        "epochs": epochs,
+        "current_epoch": 0,
+    }
+
+    async def _run_training():
+        from visionscore.training.trainer import NIMAAestheticTrainer, TrainingConfig
+
+        try:
+            config = TrainingConfig(
+                image_dir=train_dir,
+                csv_path=csv_path,
+                output_path=output_path,
+                base_weights=settings.custom_model_path,
+                epochs=epochs,
+                batch_size=batch_size,
+                learning_rate=learning_rate,
+                val_split=val_split,
+                full_finetune=full_finetune,
+                augment=augment,
+                scale=scale,
+            )
+            trainer = NIMAAestheticTrainer(config)
+            result = await asyncio.to_thread(trainer.train)
+            _training_state["progress"] = {
+                "status": "completed",
+                "epochs": result.epochs_trained,
+                "current_epoch": result.epochs_trained,
+                "best_epoch": result.best_epoch,
+                "best_val_loss": result.best_val_loss,
+                "final_train_loss": result.final_train_loss,
+                "final_val_loss": result.final_val_loss,
+                "training_time_seconds": result.training_time_seconds,
+                "total_images": result.total_images,
+                "output_path": result.output_path,
+            }
+        except Exception as e:
+            _training_state["progress"] = {
+                "status": "failed",
+                "error": str(e),
+            }
+        finally:
+            _training_state["running"] = False
+            shutil.rmtree(train_dir, ignore_errors=True)
+
+    asyncio.create_task(_run_training())
+
+    return {
+        "detail": "Training started",
+        "epochs": epochs,
+        "image_count": len(image_files),
+        "output_path": str(output_path),
+    }

@@ -187,6 +187,32 @@ class TestAnalyzeAndSave:
         assert data["id"] == "report-id-123"
         assert data["image_url"] == "https://img.url/photo.jpg"
 
+    def test_saves_with_custom_weights(self, jpeg_bytes, mock_report):
+        mock_sb = MagicMock()
+        mock_sb.upload_image = AsyncMock(return_value="https://img.url/photo.jpg")
+        mock_sb.save_report = AsyncMock(return_value="report-id-456")
+
+        with (
+            patch("visionscore.pipeline.orchestrator.AnalysisOrchestrator") as MockOrch,
+            patch("visionscore.api.routes.get_supabase_client", return_value=mock_sb),
+        ):
+            instance = MagicMock()
+            instance.run.return_value = mock_report
+            instance.warnings = []
+            MockOrch.return_value = instance
+
+            from visionscore.api.app import app
+
+            with TestClient(app) as c:
+                resp = c.post(
+                    "/api/v1/analyze/save?weights=30:30:30:10",
+                    files={"file": ("photo.jpg", jpeg_bytes, "image/jpeg")},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "report-id-456"
+
 
 # ---------------------------------------------------------------------------
 # Reports CRUD
@@ -269,6 +295,75 @@ class TestReportsCRUD:
                 resp = c.delete("/api/v1/reports/nonexistent")
 
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Plugins
+# ---------------------------------------------------------------------------
+
+
+class TestPlugins:
+    def test_list_plugins_returns_200(self, client):
+        resp = client.get("/api/v1/plugins")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "plugins" in data
+        assert isinstance(data["plugins"], list)
+        assert "bundled_enabled" in data
+
+    def test_toggle_bundled_plugins(self, client):
+        # Read initial state
+        initial = client.get("/api/v1/plugins").json()["bundled_enabled"]
+        # Toggle
+        resp = client.post("/api/v1/plugins/toggle-bundled")
+        assert resp.status_code == 200
+        assert resp.json()["enable_bundled_plugins"] is (not initial)
+        # Toggle back
+        resp2 = client.post("/api/v1/plugins/toggle-bundled")
+        assert resp2.json()["enable_bundled_plugins"] is initial
+
+    def test_list_plugins_with_bundled_enabled(self):
+        from visionscore.api.app import app
+
+        with TestClient(app) as c:
+            # Ensure bundled is on
+            current = c.get("/api/v1/plugins").json()["bundled_enabled"]
+            if not current:
+                c.post("/api/v1/plugins/toggle-bundled")
+
+            resp = c.get("/api/v1/plugins")
+            data = resp.json()
+            assert data["bundled_enabled"] is True
+            assert len(data["plugins"]) >= 1
+            names = [p["name"] for p in data["plugins"]]
+            assert "instagram_readiness" in names
+
+            # Restore
+            if not current:
+                c.post("/api/v1/plugins/toggle-bundled")
+
+
+# ---------------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------------
+
+
+class TestTraining:
+    def test_training_status_returns_200(self, client):
+        resp = client.get("/api/v1/training/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["running"] is False
+
+    def test_start_training_rejects_empty_csv(self, client, jpeg_bytes):
+        resp = client.post(
+            "/api/v1/training/start?epochs=1&batch_size=2",
+            files=[
+                ("csv_file", ("ratings.csv", b"", "text/csv")),
+                ("image_files", ("photo.jpg", jpeg_bytes, "image/jpeg")),
+            ],
+        )
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------

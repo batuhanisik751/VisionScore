@@ -422,6 +422,7 @@ export function ResultsPage({ saved }: ResultsPageProps) {
             subScores={[
               { label: "NIMA Score", value: report.aesthetic.nima_score },
               { label: "Confidence", value: report.aesthetic.confidence * 100 },
+              { label: "Std Dev", value: report.aesthetic.std_dev },
             ]}
           />
         )}

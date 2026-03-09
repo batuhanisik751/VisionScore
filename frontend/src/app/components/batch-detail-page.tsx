@@ -92,7 +92,10 @@ export function BatchDetailPage() {
     );
   }
 
-  const successful = reports.filter((r) => r.full_report);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isErrorRecord = (r: DbRow) => r.full_report && (r.full_report as any).error === true;
+  const successful = reports.filter((r) => r.full_report && !isErrorRecord(r));
+  const errorRecords = reports.filter(isErrorRecord);
   const scores = successful.map((r) => r.overall_score);
   const avgScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
   const bestRow = successful.length > 0 ? successful.reduce((a, b) => (a.overall_score >= b.overall_score ? a : b)) : null;
@@ -345,9 +348,9 @@ export function BatchDetailPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: "Images", value: reports.length, color: "text-white" },
+            { label: "Images", value: successful.length + errorRecords.length, color: "text-white" },
             { label: "Successful", value: successful.length, color: "text-emerald-400" },
-            { label: "Failed", value: reports.length - successful.length, color: reports.length - successful.length > 0 ? "text-red-400" : "text-gray-500" },
+            { label: "Failed", value: errorRecords.length, color: errorRecords.length > 0 ? "text-red-400" : "text-gray-500" },
             { label: "Avg Score", value: avgScore.toFixed(1), color: "text-blue-400" },
           ].map((stat) => (
             <div key={stat.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 text-center">
@@ -513,6 +516,34 @@ export function BatchDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Failed images */}
+        {errorRecords.length > 0 && (
+          <div className="bg-white/[0.02] border border-red-500/20 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-red-500/10 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span className="text-sm text-red-400" style={{ fontWeight: 500 }}>
+                {errorRecords.length} failed image{errorRecords.length !== 1 && "s"}
+              </span>
+            </div>
+            <div className="divide-y divide-white/[0.03]">
+              {errorRecords.map((row) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const fr = row.full_report as any;
+                return (
+                  <div key={row.id} className="px-4 py-3 flex items-center gap-3">
+                    <span className="text-sm text-gray-400 truncate flex-1">
+                      {fr.image_meta?.path || "Unknown file"}
+                    </span>
+                    <span className="text-xs text-red-400/80 shrink-0">
+                      {fr.error_message || "Analysis failed"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation */}

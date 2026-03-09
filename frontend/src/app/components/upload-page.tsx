@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Upload, Image, X, Settings2, Eye, EyeOff, AlertCircle, Save } from "lucide-react";
 import { isAcceptedImage, ACCEPT_ATTR } from "./image-utils";
 
 export function UploadPage() {
@@ -9,6 +9,7 @@ export function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [skipAI, setSkipAI] = useState(false);
+  const [autoSave, setAutoSave] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
   const [analyzing, setAnalyzing] = useState(false);
@@ -44,7 +45,8 @@ export function UploadPage() {
       const w = `${weights.technical}:${weights.aesthetic}:${weights.composition}:${weights.ai}`;
       params.set("weights", w);
 
-      const res = await fetch(`/api/v1/analyze?${params}`, {
+      const endpoint = autoSave ? `/api/v1/analyze/save?${params}` : `/api/v1/analyze?${params}`;
+      const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -55,9 +57,17 @@ export function UploadPage() {
       }
 
       const data = await res.json();
-      navigate("/results/new", {
-        state: { report: data.report, warnings: data.warnings, imageUrl: preview, file },
-      });
+
+      if (autoSave) {
+        // Combined endpoint returns { id, report, image_url, warnings }
+        navigate(`/report/${data.id}`, {
+          state: { report: data.report, warnings: data.warnings, imageUrl: data.image_url || preview },
+        });
+      } else {
+        navigate("/results/new", {
+          state: { report: data.report, warnings: data.warnings, imageUrl: preview, file },
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -153,18 +163,32 @@ export function UploadPage() {
         {/* Options */}
         <div className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-              <button
-                onClick={() => setSkipAI(!skipAI)}
-                className={`w-9 h-5 rounded-full transition-colors relative ${skipAI ? "bg-blue-500" : "bg-white/10"}`}
-              >
-                <div
-                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${skipAI ? "left-[18px]" : "left-0.5"}`}
-                />
-              </button>
-              {skipAI ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              Skip AI Feedback
-            </label>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                <button
+                  onClick={() => setSkipAI(!skipAI)}
+                  className={`w-9 h-5 rounded-full transition-colors relative ${skipAI ? "bg-blue-500" : "bg-white/10"}`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${skipAI ? "left-[18px]" : "left-0.5"}`}
+                  />
+                </button>
+                {skipAI ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                Skip AI
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                <button
+                  onClick={() => setAutoSave(!autoSave)}
+                  className={`w-9 h-5 rounded-full transition-colors relative ${autoSave ? "bg-emerald-500" : "bg-white/10"}`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoSave ? "left-[18px]" : "left-0.5"}`}
+                  />
+                </button>
+                <Save className="w-3.5 h-3.5" />
+                Auto-save
+              </label>
+            </div>
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 transition-colors"

@@ -185,21 +185,68 @@ class SupabaseClient:
 
             batch_list = []
             for bid, rows in groups.items():
-                scores = [r["overall_score"] for r in rows]
-                best_row = max(rows, key=lambda r: r["overall_score"])
+                ok_rows = [
+                    r for r in rows
+                    if not (r.get("full_report") or {}).get("error")
+                ]
+                error_count = len(rows) - len(ok_rows)
+                scores = [r["overall_score"] for r in ok_rows]
+                best_row = max(ok_rows, key=lambda r: r["overall_score"]) if ok_rows else None
                 batch_list.append({
                     "batch_id": bid,
                     "created_at": rows[0]["created_at"],
-                    "count": len(rows),
-                    "average_score": round(sum(scores) / len(scores), 1),
-                    "best_score": best_row["overall_score"],
-                    "best_grade": best_row["grade"],
-                    "image_urls": [r.get("image_url") for r in rows[:4] if r.get("image_url")],
+                    "count": len(ok_rows),
+                    "errors": error_count,
+                    "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
+                    "best_score": best_row["overall_score"] if best_row else 0,
+                    "best_grade": best_row["grade"] if best_row else "F",
+                    "image_urls": [r.get("image_url") for r in ok_rows[:4] if r.get("image_url")],
                 })
             batch_list.sort(key=lambda b: b["created_at"], reverse=True)
             return batch_list
 
         return await asyncio.to_thread(_list)
+
+    async def save_batch_errors(
+        self,
+        errors: dict[str, str],
+        batch_id: str,
+    ) -> int:
+        """Save error placeholder records for failed batch images. Returns count saved."""
+
+        def _insert() -> int:
+            saved = 0
+            for filename, error_msg in errors.items():
+                row = {
+                    "image_path": filename,
+                    "overall_score": 0,
+                    "grade": "F",
+                    "full_report": {
+                        "error": True,
+                        "error_message": error_msg,
+                        "image_meta": {
+                            "path": filename,
+                            "width": 0,
+                            "height": 0,
+                            "format": "",
+                            "exif": {},
+                        },
+                        "overall_score": 0,
+                        "grade": "F",
+                        "timestamp": None,
+                        "analysis_time_seconds": 0,
+                    },
+                    "report_type": "batch",
+                    "batch_id": batch_id,
+                }
+                try:
+                    self._client.table("analysis_reports").insert(row).execute()
+                    saved += 1
+                except Exception as e:
+                    logger.warning("Failed to save batch error for %s: %s", filename, e)
+            return saved
+
+        return await asyncio.to_thread(_insert)
 
     async def delete_batch(self, batch_id: str) -> bool:
         """Delete all reports in a batch. Returns True if any rows were deleted."""

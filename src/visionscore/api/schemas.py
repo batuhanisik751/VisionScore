@@ -35,7 +35,28 @@ class ReportListResponse(BaseModel):
 class BatchSaveResponse(BaseModel):
     batch_id: str
     saved_count: int
+    errors_saved: int = 0
 
 
 class BatchGroupsResponse(BaseModel):
     batches: list[dict[str, Any]]
+
+
+class PluginResponse(BaseModel):
+    name: str
+    display_name: str
+    version: str
+    description: str
+    score_weight: float
+    score_field: str
+    source: str = "unknown"
+
+
+class PluginListResponse(BaseModel):
+    plugins: list[PluginResponse]
+    bundled_enabled: bool
+
+
+class TrainingStatusResponse(BaseModel):
+    running: bool
+    progress: dict[str, Any] = Field(default_factory=dict)
