@@ -364,20 +364,32 @@ export function BatchDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {bestRow && (
             <div className="bg-white/[0.03] border border-emerald-500/20 rounded-xl p-4 flex items-center gap-4">
-              <Trophy className="w-8 h-8 text-emerald-400 shrink-0" />
+              {bestRow.image_url ? (
+                <img src={bestRow.image_url} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />
+              ) : (
+                <Trophy className="w-8 h-8 text-emerald-400 shrink-0" />
+              )}
               <div className="min-w-0">
                 <p className="text-xs text-emerald-400 mb-0.5">Best Image</p>
-                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>{bestRow.full_report.image_meta.path}</p>
+                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
+                  {bestRow.full_report.image_meta.path.split("/").pop() || bestRow.full_report.image_meta.path}
+                </p>
                 <p className="text-emerald-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>{bestRow.overall_score.toFixed(1)}</p>
               </div>
             </div>
           )}
           {worstRow && (
             <div className="bg-white/[0.03] border border-red-500/20 rounded-xl p-4 flex items-center gap-4">
-              <AlertCircle className="w-8 h-8 text-red-400 shrink-0" />
+              {worstRow.image_url ? (
+                <img src={worstRow.image_url} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />
+              ) : (
+                <AlertCircle className="w-8 h-8 text-red-400 shrink-0" />
+              )}
               <div className="min-w-0">
                 <p className="text-xs text-red-400 mb-0.5">Lowest Score</p>
-                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>{worstRow.full_report.image_meta.path}</p>
+                <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
+                  {worstRow.full_report.image_meta.path.split("/").pop() || worstRow.full_report.image_meta.path}
+                </p>
                 <p className="text-red-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>{worstRow.overall_score.toFixed(1)}</p>
               </div>
             </div>
@@ -484,7 +496,7 @@ export function BatchDetailPage() {
                         <span className={`text-sm truncate ${
                           isBest ? "text-emerald-400 font-semibold" : isWorst ? "text-red-400 font-semibold" : "text-gray-300"
                         }`}>
-                          {rp.image_meta.path}
+                          {rp.image_meta.path.split("/").pop() || rp.image_meta.path}
                         </span>
                       </div>
                     </td>

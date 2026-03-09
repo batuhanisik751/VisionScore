@@ -37,6 +37,7 @@ models/
 *.pth
 *.onnx
 *.bin
+*.safetensors
 
 # Output reports
 output/
@@ -49,6 +50,11 @@ uploads/
 examples/sample_images/
 examples/reports/
 
+# Training artifacts
+training_runs/
+checkpoints/
+*.log
+
 # Testing
 .pytest_cache/
 htmlcov/
@@ -58,6 +64,11 @@ coverage.xml
 # mypy
 .mypy_cache/
 
+# ruff
+.ruff_cache/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.env
+frontend/.env.local

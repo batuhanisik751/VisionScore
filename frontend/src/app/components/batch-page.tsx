@@ -50,6 +50,7 @@ export function BatchPage() {
   const [previews, setPreviews] = useState<Map<string, string>>(new Map());
   const [dragging, setDragging] = useState(false);
   const [skipAI, setSkipAI] = useState(true);
+  const [autoSave, setAutoSave] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [weights, setWeights] = useState({ technical: 25, aesthetic: 30, composition: 25, ai: 20 });
 
@@ -203,7 +204,7 @@ export function BatchPage() {
     const totalTime = (performance.now() - startTime) / 1000;
     const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
-    setBatch({
+    const batchResult: BatchResult = {
       total: files.length,
       successful: scores.length,
       failed: results.length - scores.length,
@@ -215,9 +216,49 @@ export function BatchPage() {
       gradeDistribution: gradeCounts,
       totalTime: Math.round(totalTime * 10) / 10,
       results,
-    });
+    };
 
+    setBatch(batchResult);
     setAnalyzing(false);
+
+    if (autoSave && scores.length > 0) {
+      // Auto-save: trigger save immediately after analysis
+      setSaving(true);
+      try {
+        const reportsMap: Record<string, AnalysisReport> = {};
+        const errorsMap: Record<string, string> = {};
+        batchResult.results.forEach((r) => {
+          if (r.report) reportsMap[r.filename] = r.report;
+          else if (r.error) errorsMap[r.filename] = r.error;
+        });
+
+        const formData = new FormData();
+        for (const file of files) {
+          if (reportsMap[file.name]) formData.append("files", file);
+        }
+        formData.append("reports_json", JSON.stringify(reportsMap));
+        if (Object.keys(errorsMap).length > 0) {
+          formData.append("errors_json", JSON.stringify(errorsMap));
+        }
+
+        const res = await fetch("/api/v1/reports/batch", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.detail || `Save failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        setSaveSuccess(true);
+        setTimeout(() => navigate(`/batch-report/${data.batch_id}`), 600);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Auto-save failed");
+        setSaving(false);
+      }
+    }
   };
 
   const exportCSV = () => {
@@ -433,22 +474,40 @@ export function BatchPage() {
           {/* Options */}
           <div className="space-y-4 max-w-xl mx-auto">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-                <button
-                  onClick={() => setSkipAI(!skipAI)}
-                  className={`w-9 h-5 rounded-full transition-colors relative ${
-                    skipAI ? "bg-blue-500" : "bg-white/10"
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      skipAI ? "left-[18px]" : "left-0.5"
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                  <button
+                    onClick={() => setSkipAI(!skipAI)}
+                    className={`w-9 h-5 rounded-full transition-colors relative ${
+                      skipAI ? "bg-blue-500" : "bg-white/10"
                     }`}
-                  />
-                </button>
-                {skipAI ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                Skip AI Feedback
-              </label>
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                        skipAI ? "left-[18px]" : "left-0.5"
+                      }`}
+                    />
+                  </button>
+                  {skipAI ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  Skip AI
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                  <button
+                    onClick={() => setAutoSave(!autoSave)}
+                    className={`w-9 h-5 rounded-full transition-colors relative ${
+                      autoSave ? "bg-emerald-500" : "bg-white/10"
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                        autoSave ? "left-[18px]" : "left-0.5"
+                      }`}
+                    />
+                  </button>
+                  <Save className="w-3.5 h-3.5" />
+                  Auto-save
+                </label>
+              </div>
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 transition-colors"
@@ -565,40 +624,50 @@ export function BatchPage() {
           {/* Best & Worst + Grade Distribution */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Best */}
-            {batch.bestImage && (
-              <div className="bg-white/[0.03] border border-emerald-500/20 rounded-xl p-4 flex items-center gap-4">
-                <div className="shrink-0">
-                  <Trophy className="w-8 h-8 text-emerald-400" />
+            {batch.bestImage && (() => {
+              const bestResult = batch.results.find((r) => r.filename === batch.bestImage);
+              return (
+                <div className="bg-white/[0.03] border border-emerald-500/20 rounded-xl p-4 flex items-center gap-4">
+                  {bestResult?.imageUrl ? (
+                    <img src={bestResult.imageUrl} alt={batch.bestImage} className="w-16 h-16 rounded-lg object-cover shrink-0" />
+                  ) : (
+                    <Trophy className="w-8 h-8 text-emerald-400 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs text-emerald-400 mb-0.5">Best Image</p>
+                    <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
+                      {batch.bestImage}
+                    </p>
+                    <p className="text-emerald-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>
+                      {batch.bestScore.toFixed(1)}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-emerald-400 mb-0.5">Best Image</p>
-                  <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
-                    {batch.bestImage}
-                  </p>
-                  <p className="text-emerald-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>
-                    {batch.bestScore.toFixed(1)}
-                  </p>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Worst */}
-            {batch.worstImage && (
-              <div className="bg-white/[0.03] border border-red-500/20 rounded-xl p-4 flex items-center gap-4">
-                <div className="shrink-0">
-                  <AlertCircle className="w-8 h-8 text-red-400" />
+            {batch.worstImage && (() => {
+              const worstResult = batch.results.find((r) => r.filename === batch.worstImage);
+              return (
+                <div className="bg-white/[0.03] border border-red-500/20 rounded-xl p-4 flex items-center gap-4">
+                  {worstResult?.imageUrl ? (
+                    <img src={worstResult.imageUrl} alt={batch.worstImage} className="w-16 h-16 rounded-lg object-cover shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-8 h-8 text-red-400 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs text-red-400 mb-0.5">Lowest Score</p>
+                    <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
+                      {batch.worstImage}
+                    </p>
+                    <p className="text-red-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>
+                      {batch.worstScore.toFixed(1)}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-red-400 mb-0.5">Lowest Score</p>
-                  <p className="text-white text-sm truncate" style={{ fontWeight: 600 }}>
-                    {batch.worstImage}
-                  </p>
-                  <p className="text-red-400 text-lg tabular-nums" style={{ fontWeight: 700 }}>
-                    {batch.worstScore.toFixed(1)}
-                  </p>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Grade distribution */}
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
