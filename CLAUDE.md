@@ -5,11 +5,13 @@ Python AI photo evaluation tool. Scores images on technical quality, aesthetics,
 
 ## Tech Stack
 - Python 3.11+, PyTorch, OpenCV, Pillow, Typer (CLI), FastAPI (API)
-- NIMA (MobileNetV2) for aesthetics, YOLOv8 for detection, GPT-4o/Gemini for AI feedback
+- NIMA (MobileNetV2) for aesthetics, Ollama + LLaVA for AI feedback
+- React 18 + TypeScript + Vite + Tailwind (frontend)
 - pytest, ruff, mypy
 
 ## Structure
-- `src/visionscore/` - main package (analyzers/, pipeline/, scoring/, output/, api/)
+- `src/visionscore/` - main package (analyzers/, pipeline/, scoring/, output/, api/, training/, plugins/)
+- `frontend/` - React web dashboard
 - `tests/` - pytest tests with generated fixture images
 - `scripts/` - model download, benchmarks
 - `PLAN.md` - detailed implementation plan (gitignored)

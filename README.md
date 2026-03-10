@@ -12,6 +12,7 @@ AI-powered photo evaluation tool that scores images on technical quality, aesthe
 - **Composition Analysis** -- Rule of thirds, subject position, horizon, balance via spectral residual saliency
 - **AI Feedback** -- Ollama + LLaVA for natural language critique with structured JSON output
 - **Improvement Suggestions** -- Quantified edit suggestions with tool-specific values (Lightroom sliders, Unsharp Mask params, Kelvin/Tint WB, directional reframe guidance) and crop previews
+- **Auto-Fix** -- Automatically apply suggested edits (exposure, contrast, color, sharpness, crop, horizon) to produce a corrected image
 - **Score Aggregation** -- Weighted scoring with configurable weights, grades S/A/B/C/D/F
 - **Comparison & Batch** -- Side-by-side image comparison, directory batch analysis with CSV export
 - **Gallery Mode** -- Generate standalone HTML gallery from batch results with POTD hero and rankings
@@ -77,6 +78,7 @@ visionscore compare before.jpg after.jpg             # Compare two images
 visionscore analyze-batch photos/ --skip-ai          # Batch analysis
 visionscore analyze-batch photos/ --save results.csv # Export CSV
 visionscore gallery photos/ --output gallery.html    # HTML gallery
+visionscore auto-fix photo.jpg --output fixed.jpg    # Auto-apply suggested edits
 visionscore train photos/ ratings.csv --epochs 20    # Fine-tune NIMA
 visionscore plugins                                  # List registered plugins
 ```
@@ -154,17 +156,17 @@ Plugins can also be distributed as packages using the `visionscore.analyzers` en
 ```
 src/visionscore/
   analyzers/       # Technical, aesthetic, composition, AI feedback analyzers
-  pipeline/        # Image loading, metadata extraction, orchestration
+  pipeline/        # Image loading, metadata extraction, orchestration, auto-edit
   scoring/         # Score aggregation, grading (S/A/B/C/D/F)
   output/          # CLI, JSON, markdown, CSV, comparison formatters
   training/        # NIMA fine-tuning with EMD loss
   plugins/         # Plugin registry + bundled Instagram plugin
   api/             # FastAPI routes + Supabase client
-  cli.py           # Typer CLI (7 commands)
+  cli.py           # Typer CLI (9 commands)
   config.py        # Settings loaded from .env
   models.py        # Pydantic data models
 frontend/          # React 18 + TypeScript + Vite + Tailwind dashboard
-tests/             # 28 pytest test files
+tests/             # 29 pytest test files
 scripts/           # Model download utility
 ```
 
