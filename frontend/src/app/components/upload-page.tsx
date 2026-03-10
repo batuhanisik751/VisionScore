@@ -57,7 +57,7 @@ export function UploadPage() {
             if (res.ok) {
               const saved = await res.json();
               navigate(`/report/${saved.id}`, {
-                state: { report: saved.report, warnings: saved.warnings, imageUrl: saved.image_url || preview },
+                state: { report: saved.report, warnings: saved.warnings, imageUrl: saved.image_url || preview, file },
               });
               return;
             }

@@ -26,6 +26,7 @@ from visionscore.api.schemas import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
     ApiKeyListResponse,
+    AutoFixResponse,
     BatchGroupsResponse,
     BatchSaveResponse,
     HealthResponse,
@@ -215,6 +216,67 @@ async def analyze_image(
         content, suffix, request, skip_ai, weights, skip_suggestions
     )
     return AnalyzeResponse(report=report, warnings=warnings)
+
+
+# ---------------------------------------------------------------------------
+# Auto-fix endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/auto-fix",
+    response_model=AutoFixResponse,
+    tags=["analysis"],
+    summary="Auto-fix an uploaded image based on analysis suggestions",
+    responses={
+        400: {"description": "Invalid file format or empty file"},
+        413: {"description": "File too large (max 20MB)"},
+    },
+)
+async def auto_fix_image(
+    request: Request,
+    file: UploadFile = File(...),
+    skip_ai: bool = Query(True, description="Skip AI feedback (faster)"),
+):
+    """Upload an image, run analysis, apply suggested edits, return the fixed image URL."""
+    from visionscore.pipeline.auto_edit import run_auto_edit
+
+    suffix = _validate_extension(file.filename)
+    content = await _read_upload(file)
+
+    # Save original to uploads dir.
+    original_url = _save_image_locally(content, file.filename or f"upload{suffix}")
+
+    # Write to temp file for processing.
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Output to a temp file as well.
+        output_path = tmp_path.parent / f"{tmp_path.stem}_autofix{suffix}"
+        result = await asyncio.to_thread(run_auto_edit, tmp_path, output_path, skip_ai)
+
+        # Save the fixed image to uploads dir.
+        download_url = ""
+        if result.edited_path and Path(result.edited_path).exists():
+            fixed_bytes = Path(result.edited_path).read_bytes()
+            stem = Path(file.filename or "image").stem
+            download_url = _save_image_locally(fixed_bytes, f"{stem}_autofix{suffix}")
+            Path(result.edited_path).unlink(missing_ok=True)
+
+        return AutoFixResponse(
+            download_url=download_url,
+            original_url=original_url,
+            applied_edits=[
+                {"type": e.type.value, "instruction": e.instruction, "parameters": e.parameters}
+                for e in result.applied_edits
+            ],
+            skipped=result.skipped,
+            edit_time_seconds=result.edit_time_seconds,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

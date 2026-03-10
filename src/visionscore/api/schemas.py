@@ -80,6 +80,23 @@ class TrainingStatusResponse(BaseModel):
     progress: dict[str, Any] = Field(default_factory=dict)
 
 
+# ---- Auto-Fix ----
+
+
+class AutoFixAppliedEdit(BaseModel):
+    type: str
+    instruction: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class AutoFixResponse(BaseModel):
+    download_url: str
+    original_url: str
+    applied_edits: list[AutoFixAppliedEdit] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    edit_time_seconds: float = 0.0
+
+
 # ---- Mobile-Friendly API (Phase 9.8) ----
 
 

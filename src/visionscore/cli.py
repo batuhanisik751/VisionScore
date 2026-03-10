@@ -306,6 +306,49 @@ def compare(
         console.print(f"[green]Comparison report saved to {save}[/green]")
 
 
+@app.command("auto-fix")
+def auto_fix(
+    image_path: Path = typer.Argument(..., help="Path to the image file"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output path for fixed image"),
+    skip_ai: bool = typer.Option(False, "--skip-ai", help="Skip AI feedback analysis"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+) -> None:
+    """Analyze a photo and auto-fix it based on improvement suggestions."""
+    import logging
+
+    from visionscore.pipeline.auto_edit import run_auto_edit
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not image_path.exists():
+        console.print(f"[red]File not found: {image_path}[/red]")
+        raise typer.Exit(1)
+
+    with console.status("[cyan]Analyzing and applying fixes...[/cyan]"):
+        result = run_auto_edit(image_path, output_path=output, skip_ai=skip_ai)
+
+    if not result.applied_edits:
+        console.print("[green]No fixable suggestions — image looks good![/green]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title="Applied Edits", show_lines=False)
+    table.add_column("Type", style="cyan")
+    table.add_column("Description", style="white")
+    for edit in result.applied_edits:
+        table.add_row(edit.type.value.capitalize(), edit.instruction)
+    console.print(table)
+
+    if result.skipped:
+        for msg in result.skipped:
+            console.print(f"[dim]Skipped: {msg}[/dim]")
+
+    console.print(f"\n[green]Fixed image saved to:[/green] {result.edited_path}")
+    console.print(f"[dim]Completed in {result.edit_time_seconds}s[/dim]")
+
+
 @app.command()
 def train(
     image_dir: Path = typer.Argument(..., help="Directory containing training images"),

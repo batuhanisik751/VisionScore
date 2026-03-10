@@ -93,6 +93,24 @@ class SuggestionsResult(BaseModel):
     summary: str = ""
 
 
+class AppliedEdit(BaseModel):
+    """Record of a single edit that was applied to an image."""
+
+    type: SuggestionType
+    instruction: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class AutoEditResult(BaseModel):
+    """Output of the auto-edit pipeline."""
+
+    original_path: str = ""
+    edited_path: str = ""
+    applied_edits: list[AppliedEdit] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    edit_time_seconds: float = 0.0
+
+
 class Grade(str, Enum):
     S = "S"
     A = "A"

@@ -511,6 +511,8 @@ export function ResultsPage({ saved }: ResultsPageProps) {
                 ? report.suggestions.crop_preview_path
                 : undefined
             }
+            imageFile={state?.file || null}
+            originalImageUrl={report.image_url}
           />
         </div>
       )}
