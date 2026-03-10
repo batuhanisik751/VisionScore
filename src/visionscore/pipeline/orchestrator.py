@@ -186,7 +186,6 @@ class AnalysisOrchestrator:
         plugin_results, plugin_weights = completed_results["plugins"]
 
         # Phase 3: Suggestions (depends on technical + composition + ai_feedback)
-        _notify("suggestions", "Generating improvement suggestions...")
         suggestions = None
         if not self._skip_suggestions:
             try:
@@ -204,9 +203,9 @@ class AnalysisOrchestrator:
                 suggestions = suggestions_analyzer.analyze(image, metadata=meta)
             except Exception as e:
                 self.warnings.append(f"Suggestions error: {e}")
+        _notify("suggestions", "Generating improvement suggestions...")
 
         # Phase 4: Aggregation ------------------------------------------------
-        _notify("aggregating", "Aggregating scores and grading...")
         report = AnalysisReport(
             image_meta=meta,
             technical=technical,
@@ -221,6 +220,7 @@ class AnalysisOrchestrator:
         report.overall_score = aggregator.aggregate(report, plugin_weights=plugin_weights)
         report.grade = assign_grade(report.overall_score)
         report.analysis_time_seconds = round(time.perf_counter() - start, 3)
+        _notify("aggregating", "Aggregating scores and grading...")
 
         return report
 

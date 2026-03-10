@@ -47,17 +47,15 @@ export function UploadPage() {
           try {
             const formData = new FormData();
             formData.append("file", file);
-            const params = new URLSearchParams();
-            if (skipAI) params.set("skip_ai", "true");
-            params.set("weights", w);
-            const res = await fetch(`/api/v1/analyze/save?${params}`, {
+            formData.append("report_json", JSON.stringify(data.report));
+            const res = await fetch("/api/v1/reports", {
               method: "POST",
               body: formData,
             });
             if (res.ok) {
               const saved = await res.json();
               navigate(`/report/${saved.id}`, {
-                state: { report: saved.report, warnings: saved.warnings, imageUrl: saved.image_url || preview, file },
+                state: { report: saved.report, warnings: data.warnings, imageUrl: saved.image_url || preview, file },
               });
               return;
             }
