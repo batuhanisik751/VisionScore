@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from visionscore.config import Settings
@@ -63,56 +65,66 @@ class AnalysisOrchestrator:
         start = time.perf_counter()
         total = len(_STAGES)
 
-        def _notify(stage_index: int) -> None:
-            if progress_callback:
-                name, msg = _STAGES[stage_index]
-                progress_callback(name, stage_index + 1, total, msg)
+        counter = 0
+        counter_lock = threading.Lock()
 
-        _notify(0)
+        def _notify(stage_name: str, message: str) -> None:
+            nonlocal counter
+            with counter_lock:
+                counter += 1
+                idx = counter
+            if progress_callback:
+                progress_callback(stage_name, idx, total, message)
+
+        # Phase 1: Sequential setup ------------------------------------------
+        _notify("loading", "Loading image...")
         image = load_image(image_path, max_size=self._settings.max_image_size)
-        _notify(1)
+        _notify("metadata", "Extracting metadata...")
         meta = extract_metadata(image_path)
 
-        # Technical analysis (always runs)
-        _notify(2)
-        from visionscore.analyzers.technical import TechnicalAnalyzer
+        # Phase 2: Parallel analyzers -----------------------------------------
+        # These 5 tasks are independent — they all need only (image, metadata).
 
-        tech_analyzer = TechnicalAnalyzer(thresholds=self._settings.thresholds)
-        technical = tech_analyzer.analyze(image, metadata=meta)
+        def _run_technical():  # noqa: ANN202
+            from visionscore.analyzers.technical import TechnicalAnalyzer
 
-        # Aesthetic analysis (optional - needs NIMA weights)
-        _notify(3)
-        aesthetic = None
-        try:
-            from visionscore.analyzers.aesthetic import AestheticAnalyzer
+            analyzer = TechnicalAnalyzer(thresholds=self._settings.thresholds)
+            return analyzer.analyze(image, metadata=meta)
 
-            if self._settings.custom_model_path and self._settings.custom_model_path.is_file():
-                model_path = self._settings.custom_model_path
-            else:
-                finetuned = self._settings.model_dir / "nima_finetuned.pth"
-                base = self._settings.model_dir / "nima_mobilenetv2.pth"
-                model_path = finetuned if finetuned.is_file() else base
-            aes_analyzer = AestheticAnalyzer(model_path=model_path, device=self._settings.device)
-            aesthetic = aes_analyzer.analyze(image, metadata=meta)
-        except FileNotFoundError:
-            self.warnings.append(
-                "Aesthetic scoring skipped: NIMA weights not found. "
-                "Run: python scripts/download_models.py"
-            )
-        except Exception as e:
-            self.warnings.append(f"Aesthetic scoring error: {e}")
+        def _run_aesthetic():  # noqa: ANN202
+            try:
+                from visionscore.analyzers.aesthetic import AestheticAnalyzer
 
-        # Composition analysis (always runs)
-        _notify(4)
-        from visionscore.analyzers.composition import CompositionAnalyzer
+                if self._settings.custom_model_path and self._settings.custom_model_path.is_file():
+                    model_path = self._settings.custom_model_path
+                else:
+                    finetuned = self._settings.model_dir / "nima_finetuned.pth"
+                    base = self._settings.model_dir / "nima_mobilenetv2.pth"
+                    model_path = finetuned if finetuned.is_file() else base
+                aes_analyzer = AestheticAnalyzer(
+                    model_path=model_path, device=self._settings.device
+                )
+                return aes_analyzer.analyze(image, metadata=meta)
+            except FileNotFoundError:
+                self.warnings.append(
+                    "Aesthetic scoring skipped: NIMA weights not found. "
+                    "Run: python scripts/download_models.py"
+                )
+                return None
+            except Exception as e:
+                self.warnings.append(f"Aesthetic scoring error: {e}")
+                return None
 
-        comp_analyzer = CompositionAnalyzer()
-        composition = comp_analyzer.analyze(image, metadata=meta)
+        def _run_composition():  # noqa: ANN202
+            from visionscore.analyzers.composition import CompositionAnalyzer
 
-        # AI feedback (optional - needs Ollama)
-        _notify(5)
-        ai_feedback = None
-        if not self._skip_ai:
+            comp_analyzer = CompositionAnalyzer()
+            return comp_analyzer.analyze(image, metadata=meta)
+
+        def _run_ai_feedback():  # noqa: ANN202
+            if self._skip_ai:
+                self.warnings.append("AI feedback skipped: --skip-ai flag set.")
+                return None
             try:
                 from visionscore.analyzers.ai_feedback import AIFeedbackAnalyzer
 
@@ -120,19 +132,61 @@ class AnalysisOrchestrator:
                     host=self._settings.ollama_host,
                     model=self._settings.ollama_model,
                 )
-                ai_feedback = ai_analyzer.analyze(image, metadata=meta)
+                return ai_analyzer.analyze(image, metadata=meta)
             except ConnectionError:
                 self.warnings.append(
                     "AI feedback skipped: Ollama not available. "
                     "Run: ollama serve && ollama pull llava"
                 )
+                return None
             except Exception as e:
                 self.warnings.append(f"AI feedback error: {e}")
-        else:
-            self.warnings.append("AI feedback skipped: --skip-ai flag set.")
+                return None
 
-        # Improvement suggestions (optional)
-        _notify(6)
+        def _run_plugins() -> tuple[dict[str, object], dict[str, tuple[float, str]]]:
+            results: dict[str, object] = {}
+            weights: dict[str, tuple[float, str]] = {}
+            for info, analyzer_cls in self._plugin_registry.get_all():
+                try:
+                    analyzer = analyzer_cls()
+                    result = analyzer.analyze(image, metadata=meta)
+                    results[info.name] = result.model_dump()
+                    if info.score_weight > 0:
+                        weights[info.name] = (info.score_weight, info.score_field)
+                except Exception as e:
+                    self.warnings.append(f"Plugin '{info.display_name}' error: {e}")
+            return results, weights
+
+        _STAGE_MESSAGES = {
+            "technical": "Running technical analysis...",
+            "aesthetic": "Running aesthetic analysis...",
+            "composition": "Running composition analysis...",
+            "ai_feedback": "Running AI feedback analysis...",
+            "plugins": "Running plugin analyzers...",
+        }
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {
+                pool.submit(_run_technical): "technical",
+                pool.submit(_run_aesthetic): "aesthetic",
+                pool.submit(_run_composition): "composition",
+                pool.submit(_run_ai_feedback): "ai_feedback",
+                pool.submit(_run_plugins): "plugins",
+            }
+            completed_results: dict[str, object] = {}
+            for future in as_completed(futures):
+                stage_name = futures[future]
+                completed_results[stage_name] = future.result()
+                _notify(stage_name, _STAGE_MESSAGES[stage_name])
+
+        technical = completed_results["technical"]
+        aesthetic = completed_results["aesthetic"]
+        composition = completed_results["composition"]
+        ai_feedback = completed_results["ai_feedback"]
+        plugin_results, plugin_weights = completed_results["plugins"]
+
+        # Phase 3: Suggestions (depends on technical + composition + ai_feedback)
+        _notify("suggestions", "Generating improvement suggestions...")
         suggestions = None
         if not self._skip_suggestions:
             try:
@@ -151,22 +205,8 @@ class AnalysisOrchestrator:
             except Exception as e:
                 self.warnings.append(f"Suggestions error: {e}")
 
-        # Plugin analyzers
-        _notify(7)
-        plugin_results: dict[str, object] = {}
-        plugin_weights: dict[str, tuple[float, str]] = {}
-        for info, analyzer_cls in self._plugin_registry.get_all():
-            try:
-                analyzer = analyzer_cls()
-                result = analyzer.analyze(image, metadata=meta)
-                plugin_results[info.name] = result.model_dump()
-                if info.score_weight > 0:
-                    plugin_weights[info.name] = (info.score_weight, info.score_field)
-            except Exception as e:
-                self.warnings.append(f"Plugin '{info.display_name}' error: {e}")
-
-        # Build report, aggregate and grade
-        _notify(8)
+        # Phase 4: Aggregation ------------------------------------------------
+        _notify("aggregating", "Aggregating scores and grading...")
         report = AnalysisReport(
             image_meta=meta,
             technical=technical,

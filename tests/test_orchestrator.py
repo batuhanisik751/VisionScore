@@ -56,3 +56,19 @@ class TestOrchestrator:
         orch = AnalysisOrchestrator(skip_ai=True)
         report = orch.run(normal_image_path, progress_callback=None)
         assert isinstance(report, AnalysisReport)
+
+    def test_parallel_stages_all_complete(self, normal_image_path) -> None:
+        """All analyzer stages report completion regardless of execution order."""
+        from unittest.mock import MagicMock
+
+        cb = MagicMock()
+        orch = AnalysisOrchestrator(skip_ai=True)
+        orch.run(normal_image_path, progress_callback=cb)
+
+        reported_stages = {call.args[0] for call in cb.call_args_list}
+        expected = {
+            "loading", "metadata", "technical", "aesthetic",
+            "composition", "ai_feedback", "suggestions",
+            "plugins", "aggregating",
+        }
+        assert reported_stages == expected
